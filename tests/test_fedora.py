@@ -136,6 +136,27 @@ class ServiceLogicTests(unittest.TestCase):
                 self.assertEqual(len(cal.payload(saved)), 1 + 16 + 21 * 4)
 
 
+class UpdateInstalledTests(unittest.TestCase):
+    def test_change_detection_and_copy_only_when_different(self):
+        from tools import update_installed as up
+        with tempfile.TemporaryDirectory() as tmp:
+            a, b = Path(tmp) / 'a', Path(tmp) / 'b'
+            for d in (a, b):
+                (d / 'sub').mkdir(parents=True); (d / 'sub/f').write_text('x'); (d / 'g').write_text('y')
+            self.assertTrue(up.same_tree(a, b))
+            (b / 'g').write_text('changed'); self.assertFalse(up.same_tree(a, b))
+            (b / 'g').write_text('y'); (b / 'extra').write_text('z'); self.assertFalse(up.same_tree(a, b))
+            self.assertFalse(up.same_tree(a, Path(tmp) / 'missing'))
+            dest = Path(tmp) / 'etc/x.conf'
+            with mock.patch('builtins.print'):
+                self.assertTrue(up.install_file(a / 'g', dest, 0o644))      # missing: installed
+                self.assertFalse(up.install_file(a / 'g', dest, 0o644))     # identical: untouched
+                dest.write_text('edited')
+                self.assertTrue(up.install_file(a / 'g', dest, 0o644))      # differs: restored
+                self.assertTrue(up.install_file(a / 'g', dest, 0o755))      # mode differs: fixed
+            self.assertEqual(dest.read_text(), 'y')
+
+
 class DryRunAndBackupTests(unittest.TestCase):
     def factory_disk(self, tmp):
         """A sparse 512 GB disk file carrying the factory layout (all 30 partitions)."""

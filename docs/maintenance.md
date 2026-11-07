@@ -1,5 +1,41 @@
 # Maintenance
 
+## Updating
+
+### Fedora updates
+
+```sh
+sudo dnf upgrade
+sudo reboot
+```
+
+Nothing else is needed. When a new kernel arrives, DKMS rebuilds this project's drivers for it and the kernel-update hook writes it to the boot partitions during the same transaction (see [kernel updates](#kernel-updates)). If that step fails, dnf still completes and prints a retry command; `sudo python3 /opt/lapis-kit/tools/kernel_update_fedora.py status` shows whether slot A holds the newest kernel.
+
+### Updates to this project
+
+The installed system does not run code from your git checkout: the kernel-update hook runs from `/opt/lapis-kit`, a copy made at install time, and the optional services are installed under `/usr/local/libexec`. After pulling changes, bring them across:
+
+```sh
+cd ~/googlebook && git pull
+sudo python3 tools/update_installed.py
+```
+
+`update_installed.py` only touches what this project installed, and only where it differs from the checkout, so it is safe to run at any time:
+
+- refreshes `/opt/lapis-kit` (code and assets; the built loader and pinned tool sources are kept unless their pins changed);
+- reinstalls the kernel-update hook;
+- rebuilds a DKMS driver (coreboot framebuffer, light sensor, fingerprint) for every installed kernel if its source changed;
+- restores configuration files that are missing or differ: graphics and audio services, modprobe options, the UCM profile, the microphone boost, the speaker-calibration service. Firmware is never touched;
+- reinstalls the glowbar, auto-brightness and power-mode services if you installed them.
+
+It never writes the boot partitions. If the boot initramfs configuration changed, it says so; apply it with `kernel_update_fedora.py update`. It also tells you when to restart your user services and when the fingerprint library needs rebuilding.
+
+### When something else needs attention
+
+- **The fingerprint library is held back.** `/etc/dnf/dnf.conf` has `excludepkgs=libfprint`, so dnf skips Fedora's libfprint updates and the reader keeps working with this project's build. When the project moves to a newer libfprint, `update_installed.py` says so; rebuild with `sudo sh tools/install_fingerprint_fedora.sh`.
+- **The audio profile can be overwritten.** The UCM profile lives under `/usr/share/alsa/ucm2/conf.d/sof-rt5682/`, which Fedora's `alsa-ucm` package could one day claim. If the speakers go silent after an update, run `sudo python3 tools/update_installed.py`, which puts it back.
+- **Fedora release upgrades** (for example 45 to 46 with `dnf system-upgrade`) have not been tested. The kernel hook runs in that transaction too, but the libfprint hold can stop dependency resolution; if it does, run the upgrade with `--setopt=excludepkgs=` and rebuild the fingerprint library afterwards. Keep the installer USB at hand for [rollback](#if-a-new-kernel-does-not-boot).
+
 ## Kernel updates
 
 The firmware boots the kernel in the Android boot partitions (slot A), not `/boot`. The installer adds a kernel-install plugin, `/etc/kernel/install.d/95-ruby-android.install`, so an ordinary `sudo dnf upgrade` that brings a new kernel also:

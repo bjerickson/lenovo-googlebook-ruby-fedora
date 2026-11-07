@@ -22,7 +22,9 @@ This is a fork of **[lenovo-googlebook-ruby-cachyos](https://github.com/nbarrios
 | Glowbar | Battery, charging and accent colour |
 | Fingerprint reader | Enroll and verify (patched libfprint, `cros_ec_usb`) |
 | Kernel updates | `dnf upgrade` writes new kernels to the boot partitions automatically |
-| Not yet re-checked on Fedora | Suspend, camera, Bluetooth, headphones and microphones, external displays, Thunderbolt, 120 Hz. All worked under CachyOS on the same hardware; see [hardware notes](docs/hardware.md) |
+| Display | 2880×1800 OLED at 120 Hz; external display over HDMI |
+| Bluetooth, camera, microphone, Thunderbolt | Working |
+| Not yet re-checked on Fedora | Suspend, headphones, USB-C DisplayPort. They worked under CachyOS on the same hardware; see [hardware notes](docs/hardware.md) |
 
 SELinux runs permissive after installation; see [maintenance](docs/maintenance.md#selinux) to switch to enforcing.
 
@@ -53,6 +55,7 @@ The firmware never boots `/boot`; it boots the Android partitions, which the ins
 | `tools/build_live.py`, `tools/write_usb.py` | Build and write the installer USB (console only, from a pinned Omarchy 4.0.4 ISO, with the Fedora image) |
 | `tools/install_fedora_ruby.py`, `tools/fedora.py` | One-shot installer, run from the USB (`--dry-run`, `--backup DIR`) |
 | `tools/kernel_update_fedora.py` | kernel-install hook: build, sign, validate and write new kernels; `rollback`, `status` |
+| `tools/update_installed.py` | After `git pull`: bring the installed system up to date with the checkout |
 | `tools/fetch_ruby_vendor.py` | Stream Lenovo's `vendor_a` (speaker and sensor firmware) from Google's Ruby recovery image |
 | `tools/install_ruby_audio.sh`, `tools/install_ruby_sensors.sh` | Firmware from `vendor_a`; UCM, DAX, calibration |
 | `tools/install_fingerprint_fedora.sh` | `cros_ec_usb` (DKMS) and libfprint with the `crfpmoc` driver |

@@ -136,4 +136,4 @@ systemctl --user daemon-reload && systemctl --user enable --now ruby-glowbar
 
 Also optional: `sudo sh tools/install_power_mode.sh` (22 W sustained on AC) and the 75–80 % charge limit rule; see [hardware notes](hardware.md).
 
-Then read [maintenance](maintenance.md): kernel updates, rollback and SELinux.
+Then read [maintenance](maintenance.md): updating (`dnf upgrade`, and `tools/update_installed.py` after pulling this repository), rollback and SELinux.
