@@ -9,7 +9,8 @@ The EC rejects the lightbar's built-in sequences, so every frame is set from her
 
 Needs write access to the lightbar's led_rgb (90-ruby-glowbar.rules grants it
 to the video group). The accent comes from Noctalia's theme as rendered for
-hyprwhspr's mic OSD when present, at full saturation, with a fixed fallback.
+hyprwhspr's mic OSD, else KDE Plasma's accent colour (kdeglobals), at full
+saturation, with a fixed fallback.
 """
 import colorsys
 import math
@@ -24,10 +25,10 @@ from pathlib import Path
 LIGHTBAR = Path('/sys/class/chromeos/cros_ec/lightbar')
 BATTERY = Path('/sys/class/power_supply/BAT0')
 AC = Path('/sys/class/power_supply/AC/online')
-PANEL = Path('/sys/class/drm/card0-eDP-1/dpms')
 RUNTIME = Path(os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}'))
 RECORDING = RUNTIME / 'hyprwhspr/recording_status'
 THEME = Path.home() / '.config/hyprwhspr/theme/mic-osd.css'
+KDEGLOBALS = Path.home() / '.config/kdeglobals'
 
 SEGMENTS = 4
 OFF = (0, 0, 0)
@@ -58,8 +59,31 @@ def saturate(colour):
     return tuple(round(c * 255) for c in colorsys.hsv_to_rgb(h, 1.0, 1.0))
 
 
+def kde_accent(text):
+    """Plasma writes AccentColor=r,g,b under [General] (also when taken from the wallpaper)."""
+    section = None
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith('['):
+            section = line
+        elif section == '[General]' and line.startswith('AccentColor='):
+            parts = line.split('=', 1)[1].split(',')
+            if len(parts) >= 3 and all(x.strip().isdigit() for x in parts[:3]):
+                return tuple(min(255, int(x)) for x in parts[:3])
+    return None
+
+
 def accent_colour():
-    return saturate(theme_colour(read(THEME), 'border-color', FALLBACK_ACCENT))
+    css = read(THEME)
+    if css:
+        return saturate(theme_colour(css, 'border-color', FALLBACK_ACCENT))
+    return saturate(kde_accent(read(KDEGLOBALS)) or FALLBACK_ACCENT)
+
+
+def panel_on():
+    """The internal panel's DRM card number depends on driver probe order (simpledrm, Xe)."""
+    states = [read(p) for p in Path('/sys/class/drm').glob('card*-eDP-1/dpms')]
+    return not states or 'On' in states
 
 
 def session_locked(session):
@@ -134,7 +158,7 @@ def main():
         now = time.monotonic()
         if now >= next_state:
             state = dict(
-                dark=session_locked(session) or lid_closed() or read(PANEL, 'On') != 'On',
+                dark=session_locked(session) or lid_closed() or not panel_on(),
                 recording=RECORDING.exists(),
                 ac=read(AC) == '1',
                 percent=int(read(BATTERY / 'capacity', '0') or 0),
