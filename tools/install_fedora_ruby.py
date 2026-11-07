@@ -207,7 +207,7 @@ def extras():
 
 def build_initramfs(release, framebuffer):
     put('/etc/ruby-boot/dracut.conf', (ROOT / 'assets/fedora/dracut.conf').read_text())
-    (TARGET / 'etc/ruby-boot/dracut.conf.d').mkdir(exist_ok=True)
+    put('/etc/ruby-boot/dracut.conf.d/99-ruby-size.conf', (ROOT / 'assets/fedora/99-ruby-size.conf').read_text())
     kernel = TARGET / FEDORA_KERNEL.lstrip('/')
     kernel.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(TARGET / 'usr/lib/modules' / release / 'vmlinuz', kernel)
