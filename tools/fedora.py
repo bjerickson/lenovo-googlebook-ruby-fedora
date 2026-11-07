@@ -13,7 +13,7 @@ import sys
 import tarfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lapis.common import (ROOT, FEDORA_RELEASE, FEDORA_IMAGE_URL, FEDORA_CHECKSUM_URL, FEDORA_IMAGE_SHA256,
-                          FEDORA_KEY, output, require, run, sha256)
+                          FEDORA_KEY, FEDORA_CACHE, output, require, run, sha256)
 
 TARGET = Path('/mnt')
 
@@ -70,9 +70,19 @@ def fetch(url, dest):
 
 
 def verified_image(work):
-    """Download the container image; check its pinned hash and the signed CHECKSUM file."""
+    """The container image from the USB (tools/build_usb.py) or the network.
+
+    Either way its hash must match the pinned one and the CHECKSUM file must carry a
+    valid Fedora 45 signature.
+    """
     image, checksum = work / 'fedora.oci.tar.xz', work / 'CHECKSUM'
-    fetch(FEDORA_CHECKSUM_URL, checksum)
+    name = FEDORA_IMAGE_URL.rsplit('/', 1)[1]
+    cached_image = FEDORA_CACHE / name
+    cached_checksum = FEDORA_CACHE / FEDORA_CHECKSUM_URL.rsplit('/', 1)[1]
+    if cached_checksum.is_file():
+        shutil.copyfile(cached_checksum, checksum)
+    else:
+        fetch(FEDORA_CHECKSUM_URL, checksum)
     gnupg = work / 'gnupg'
     gnupg.mkdir(mode=0o700)
     gpg = ['gpg', '--homedir', gnupg, '--batch', '--no-autostart']
@@ -81,8 +91,10 @@ def verified_image(work):
     require(f'fpr:::::::::{FEDORA_KEY}:' in shown, 'Bundled Fedora key fingerprint mismatch')
     status = subprocess.run([*gpg, '--status-fd', '1', '--verify', checksum], capture_output=True, text=True)
     require(status.returncode == 0 and f'VALIDSIG {FEDORA_KEY}' in status.stdout, 'CHECKSUM signature is not Fedora 45\'s')
-    name = FEDORA_IMAGE_URL.rsplit('/', 1)[1]
     require(f'SHA256 ({name}) = {FEDORA_IMAGE_SHA256}' in checksum.read_text(), 'Signed CHECKSUM disagrees with pinned hash')
+    if cached_image.is_file() and sha256(cached_image) == FEDORA_IMAGE_SHA256:
+        print('Using the Fedora image from the USB (hash and signature verified)')
+        return cached_image
     fetch(FEDORA_IMAGE_URL, image)
     require(sha256(image) == FEDORA_IMAGE_SHA256, 'Fedora container image checksum mismatch')
     return image

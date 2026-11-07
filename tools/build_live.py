@@ -14,14 +14,15 @@ import subprocess
 import sys
 import uuid
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from lapis.common import ROOT, ISO_SHA256, XE_PARAMETERS, new_regular_output, require, run, save_json, sha256
+from lapis.common import (ROOT, ISO_SHA256, XE_PARAMETERS, FEDORA_IMAGE_URL, FEDORA_CHECKSUM_URL, FEDORA_IMAGE_SHA256,
+                          new_regular_output, require, run, save_json, sha256)
 from lapis.boot import build_set
 from lapis.cpio import archive, find_member
 from lapis.gpt import ENTRY, read_gpt, tables
 from tools.fetch_sources import SOURCES
 
 
-def payload(vendor):
+def payload(vendor, fedora_cache=None):
     files = {}
 
     def add(name, data, mode=0o100644):
@@ -38,6 +39,14 @@ def payload(vendor):
                 add('lapis-kit/' + str(path.relative_to(ROOT)), path.read_bytes(), 0o100755 if path.suffix in ('.py', '.sh') else 0o100644)
     for name in ('LICENSE', 'NOTICE.md', 'README.md'):
         add('lapis-kit/' + name, (ROOT / name).read_bytes())
+    if fedora_cache is not None:
+        # Exactly the pinned image and its CHECKSUM; the installer re-verifies both.
+        for name in (FEDORA_IMAGE_URL.rsplit('/', 1)[1], FEDORA_CHECKSUM_URL.rsplit('/', 1)[1]):
+            path = Path(fedora_cache) / name
+            require(path.is_file(), f'Missing {path}; run tools/build_usb.py')
+            if name.endswith('.oci.tar.xz'):
+                require(sha256(path) == FEDORA_IMAGE_SHA256, f'{path} does not match the pinned Fedora image hash')
+            add('lapis-kit/cache/fedora/' + name, path.read_bytes())
     for name, (_, revision) in SOURCES.items():
         src = vendor / name
         got = subprocess.check_output(['git', '-C', str(src), 'rev-parse', 'HEAD'], text=True).strip()
@@ -65,6 +74,7 @@ def main():
     p.add_argument('--iso', required=True, type=Path)
     p.add_argument('--output', required=True, type=Path)
     p.add_argument('--vendor', type=Path, default=ROOT / 'vendor')
+    p.add_argument('--fedora-cache', type=Path, help='directory with the pinned Fedora container image and CHECKSUM to carry on the USB')
     args = p.parse_args()
     iso = args.iso.resolve()
     require(iso.is_file(), 'Missing ISO')
@@ -87,7 +97,7 @@ def main():
     initrd = (work / 'initramfs-linux-t2.img').read_bytes()
     config = find_member(initrd, 'config', lambda data: subprocess.check_output(['zstd', '-d', '-c'], input=data)).decode()
     config = config.replace(' plymouth', '').replace('="plymouth"', '=""').replace('LATEHOOKS="', 'LATEHOOKS="lapis ')
-    files = payload(args.vendor.resolve())
+    files = payload(args.vendor.resolve(), args.fedora_cache)
     files['config'] = (0o100644, config.encode())
     files['hooks/lapis'] = (0o100755, (ROOT / 'assets/live/latehook.sh').read_bytes())
     combined = work / 'live-initramfs.img'
@@ -139,7 +149,7 @@ def main():
         checked = read_gpt(f, image.stat().st_size)
     report = dict(image=image.name, sha256=sha256(image), size=image.stat().st_size,
                   iso_sha256=ISO_SHA256, cmdline=cmdline, android_partitions=layout,
-                  included_credentials=False, internal_disk_writes=False,
+                  included_credentials=False, internal_disk_writes=False, fedora_image=args.fedora_cache is not None,
                   status='Built and structurally checked; test this image on hardware before installing')
     save_json(image.with_suffix('.manifest.json'), report, 0o644)
     image.with_suffix('.sha256').write_text(report['sha256'] + '  ' + image.name + '\n')

@@ -19,15 +19,17 @@ Then, in a terminal (on Windows, the WSL terminal):
 ```sh
 git clone https://github.com/bjerickson/lenovo-googlebook-ruby-fedora.git
 cd lenovo-googlebook-ruby-fedora
-mkdir -p downloads build
-curl --fail --location -o downloads/omarchy-4.0.4.iso https://iso.omarchy.org/omarchy-4.0.4.iso
-python3 tools/fetch_sources.py
-python3 tools/build_loader.py
-python3 tools/build_live.py --iso downloads/omarchy-4.0.4.iso --output build/ruby-fedora-live.img
-(cd build && ./load_android_test -b 1 ruby-fedora-live.img | grep 'vb2api_load_kernel() returned 0')
+python3 tools/build_usb.py
 ```
 
-The ISO is only the live environment: a pinned Arch kernel and userland known to boot on Ruby's firmware. The builder refuses any ISO whose SHA-256 is not `ddeded2758c48318d201dfdac905ecb28f570441883f0c052ea3cd5d05acf92d`. The last line checks the image with ChromiumOS's Android loader; it is a packaging check, not a boot test.
+`build_usb.py` does everything and can be rerun (downloads are kept in `downloads/` and resume if interrupted):
+
+1. downloads the Omarchy 4.0.4 ISO (about 6 GB) and checks its pinned SHA-256. The ISO is only the live environment: a pinned Arch kernel and userland known to boot on Ruby's firmware;
+2. downloads Fedora 45's container image (73 MB) and signed CHECKSUM, checks the pinned hash and, if `gpg` is installed, Fedora's signature. The image goes onto the USB so the laptop does not download it; `--no-fedora-image` leaves it out;
+3. fetches the pinned mkbootimg, AVB and vboot sources and builds the loader check;
+4. builds `build/ruby-fedora-live.img` and checks it with ChromiumOS's Android loader (a packaging check, not a boot test).
+
+Use `--force` to rebuild an existing image. The individual steps are `tools/fetch_sources.py`, `tools/build_loader.py` and `tools/build_live.py`.
 
 Write it to a USB stick of 16 GB or more that you can erase. Unplug other removable drives, and identify the **whole** stick, never a partition or an internal disk. `write_usb.py` checks first, then on `--apply` asks you to type `ERASE <device>`, writes, reads the whole image back and moves the backup partition table to the end of the stick. Use it rather than `dd`, Etcher or Rufus, which skip that last step.
 
@@ -71,11 +73,16 @@ cd /opt/ruby-fedora
 python3 tools/install_fedora_ruby.py --user YOU --name 'Your Name' --timezone America/Chicago
 ```
 
-Options: `--desktop kde` (tested), `--desktop gnome` or `--desktop none` (text login; the default); `--keymap`, `--hostname`. The script asks once for `ERASE`, the disk encryption password and your login password, then runs unattended:
+Options: `--desktop kde` (tested), `--desktop gnome` or `--desktop none` (text login; the default); `--keymap`, `--hostname`.
+
+- `--dry-run` shows the current partitions, the layout after installation, whether the Fedora image is on the USB and whether the network works, then stops without writing anything.
+- `--backup DIR` first saves, to a mounted external drive (not the installer USB, not RAM), the raw partition table, every factory partition except `userdata` and `super` (about 0.8 GB), and the speaker calibration, and verifies them before anything is erased; the LUKS header is added after formatting. It is off by default: Google's recovery USB restores Googlebook OS completely, and the firmware can always be downloaded again. The backup contains private material (the LUKS header can unlock the disk with a password valid when it was taken); keep it offline.
+
+The script asks once for `ERASE`, the disk encryption password and your login password, then runs unattended:
 
 1. writes a new partition table: one Fedora root partition (about 465 GB), the boot partitions the firmware needs (`boot`, `init_boot`, `vendor_boot`, `vbmeta` for slots A and B, `misc`) at their factory positions, and the factory `super` partition, from which the speaker and sensor firmware is read; everything else is dropped;
 2. creates LUKS2 (Argon2id) with Btrfs subvolumes `@`, `@home`, `@log`, `@pkg`;
-3. downloads Fedora's signed container image (hash pinned, CHECKSUM signature checked against the Fedora 45 key), unpacks it and installs `@core` and the system with the target's own `dnf5`, GPG checks on;
+3. takes Fedora's container image from the USB, or downloads it (either way the hash is pinned and the CHECKSUM signature is checked against the Fedora 45 key), unpacks it and installs `@core` and the system with the target's own `dnf5`, GPG checks on;
 4. builds the out-of-tree modules with DKMS: the coreboot framebuffer (visible password prompt) and `cros_ec_ishtp` (light sensor);
 5. saves the factory speaker calibration from VPD, and installs Lenovo's speaker and sensor firmware from `vendor_a`;
 6. builds the small boot initramfs, signs the boot images with a new device key, validates them with the Android loader, relabels for SELinux and writes slot A.

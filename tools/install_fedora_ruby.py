@@ -2,8 +2,11 @@
 """One-shot Fedora install on a Ruby Googlebook. ERASES THE WHOLE INTERNAL DISK.
 
     python3 tools/install_fedora_ruby.py --user YOU --name 'Your Name' --timezone America/Chicago
+    ... --dry-run              show what would happen and stop
+    ... --backup /run/media/x  first save the factory boot partitions, partition table,
+                               speaker calibration and (later) the LUKS header there
 
-Run as root from the live USB, on AC, with Wi-Fi connected. No backups, no stages.
+Run as root from the live USB, on AC, with Wi-Fi connected.
 Asks once for confirmation and the two passwords, then:
 
   1. writes a new partition table: one Fedora root partition plus only what the
@@ -17,6 +20,9 @@ Asks once for confirmation and the two passwords, then:
 Safe to rerun from the top if it fails partway.
 """
 import argparse
+from datetime import datetime
+import hashlib
+import json
 import getpass
 import os
 from pathlib import Path
@@ -25,11 +31,13 @@ import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 import uuid
 import zlib
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lapis.boot import build_set
-from lapis.common import (ROOT, FEDORA_CHECKSUM_URL, FEDORA_KERNEL, FEDORA_INITRAMFS, board, output, read_json, require,
+from lapis.common import (ROOT, FEDORA_CHECKSUM_URL, FEDORA_IMAGE_URL, FEDORA_IMAGE_SHA256, FEDORA_CACHE, FEDORA_KERNEL,
+                          FEDORA_INITRAMFS, board, output, read_json, require,
                           run, save_json, sha256, write_all)
 from lapis.gpt import ENTRY, read_gpt, tables
 from tools.fedora import (PACKAGES, DESKTOPS, XE_OPTIONS, CALIBRATION, put, mask, chroot, verified_image, unpack_rootfs,
@@ -107,7 +115,7 @@ def part(disk, gpt, name):
     return Path(f"{disk}p{p['index']}"), p
 
 
-def format_root(block, disk_password):
+def format_root(block, disk_password, backup=None):
     luks_uuid = str(uuid.uuid4())
     secret = disk_password.encode()
     run(['wipefs', '-a', block])
@@ -115,6 +123,8 @@ def format_root(block, disk_password):
          '--cipher', 'aes-xts-plain64', '--key-size', '512', '--pbkdf', 'argon2id', '--pbkdf-memory', '1048576',
          '--iter-time', '2000', '--key-file', '-', block], input=secret)
     run(['cryptsetup', 'open', '--key-file', '-', block, MAPPER], input=secret)
+    if backup is not None:
+        backup.add_luks_header(block)
     mapper = f'/dev/mapper/{MAPPER}'
     run(['mkfs.btrfs', '-f', '-L', 'Fedora', mapper])
     TARGET.mkdir(exist_ok=True)
@@ -322,6 +332,119 @@ def relabel():
         (TARGET / '.autorelabel').touch()
 
 
+def table_of(primary, secondary, disk_bytes):
+    """Parse tables built in memory, via a sparse temporary file."""
+    with tempfile.TemporaryFile() as f:
+        f.truncate(disk_bytes)
+        f.seek(0); f.write(primary)
+        f.seek(disk_bytes - len(secondary)); f.write(secondary)
+        f.flush()
+        return read_gpt(f, disk_bytes)
+
+
+def current_table(disk, disk_bytes):
+    try:
+        with open(disk, 'rb') as f:
+            return read_gpt(f, disk_bytes)
+    except (RuntimeError, OSError):
+        return None
+
+
+def describe(gpt):
+    for p in sorted(gpt.partitions(), key=lambda p: p['start_lba']):
+        size = p['size']
+        human = f'{size / 2**30:.1f} GiB' if size >= 2**30 else f'{size >> 20} MiB'
+        print(f"  p{p['index']:<3} {p['name']:<26} {human:>10}")
+
+
+def dry_run(disk, disk_bytes, primary, secondary, network):
+    print(f'Disk: {disk}, {disk_bytes / 1e9:.0f} GB')
+    now = current_table(disk, disk_bytes)
+    print('\nCurrent partitions:' if now else '\nCurrent partition table: none or unreadable')
+    if now:
+        describe(now)
+    print('\nAfter installation (everything not listed is erased, including all of userdata):')
+    describe(table_of(primary, secondary, disk_bytes))
+    image = FEDORA_CACHE / FEDORA_IMAGE_URL.rsplit('/', 1)[1]
+    cached = image.is_file() and sha256(image) == FEDORA_IMAGE_SHA256
+    print(f"\nFedora image: {'on this USB, verified' if cached else 'will be downloaded (73 MB)'}")
+    print(f"Network: {'reachable' if network else 'NOT reachable: connect Wi-Fi with iwctl'}")
+    print('Then: dnf installs about 1.5 GB of packages; Lenovo firmware comes from super, or from Google (~5.5 GB) if that copy is broken.')
+    print('\nDry run: nothing was written.')
+
+
+class Backup:
+    """Opt-in copy of what is hard to get back, on a separate drive, verified before the disk is touched."""
+
+    def __init__(self, parent, disk):
+        parent = Path(parent).resolve()
+        require(parent.is_dir(), f'{parent} is not a directory')
+        fstype = output(['findmnt', '-no', 'FSTYPE', '--target', parent])
+        source = output(['findmnt', '-no', 'SOURCE', '--target', parent]).split('[')[0]
+        require(fstype not in ('tmpfs', 'ramfs', 'overlay', 'squashfs', 'iso9660', 'erofs') and source.startswith('/dev/'),
+                f'{parent} is on {fstype or "no"} filesystem: mount a USB drive or other external disk for the backup')
+        ancestors = output(['lsblk', '-s', '-n', '-r', '-o', 'PATH', source]).splitlines()
+        require(disk not in ancestors, f'{parent} is on {disk}, the disk being erased')
+        require(not Path('/run/archiso/bootmnt').is_mount() or os.stat(parent).st_dev != os.stat('/run/archiso/bootmnt').st_dev,
+                'Do not put the backup on the installer USB image')
+        require(shutil.disk_usage(parent).free > 2 * 1024**3, f'{parent} needs at least 2 GB free')
+        self.dir = parent / f"ruby-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        self.dir.mkdir(mode=0o700)
+        self.records = {}
+
+    def save(self, name, data):
+        path = self.dir / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, 'wb') as f:
+            f.write(data); f.flush(); os.fsync(f.fileno())
+        self.records[name] = hashlib.sha256(data).hexdigest()
+
+    def factory(self, disk, disk_bytes):
+        """Raw partition-table regions, and every partition except userdata and super (about 0.8 GB)."""
+        with open(disk, 'rb') as f:
+            self.save('gpt-head.bin', f.read(34 * 512))
+            f.seek(disk_bytes - 33 * 512)
+            self.save('gpt-tail.bin', f.read(33 * 512))
+            gpt = current_table(disk, disk_bytes)
+            if gpt is None:
+                print('Backup: partition table unreadable; saved its raw regions only.')
+                return
+            for p in gpt.partitions():
+                if p['name'] in ('userdata', 'super') or p['size'] > 256 * 2**20:
+                    continue
+                f.seek(p['start_lba'] * 512)
+                self.save(f"partitions/{p['index']:02d}-{p['name']}.img", f.read(p['size']))
+        self.save('partitions.json', json.dumps(gpt.partitions(), indent=1).encode())
+
+    def calibration(self):
+        subprocess.run(['modprobe', '-a', 'coreboot_table', 'vpd_sysfs'], capture_output=True)
+        out = self.dir / 'speaker-calibration'
+        r = subprocess.run([sys.executable, '-I', ROOT / 'assets/installed/ruby-speaker-calibration.py', '--save', out],
+                           capture_output=True, text=True)
+        if r.returncode == 0:
+            for f in sorted(out.iterdir()):
+                self.records[f'speaker-calibration/{f.name}'] = sha256(f)
+        else:
+            print('Backup: speaker calibration not readable here; skipped.')
+
+    def add_luks_header(self, block):
+        path = self.dir / 'luks-header.bin'
+        run(['cryptsetup', 'luksHeaderBackup', block, '--header-backup-file', path])
+        path.chmod(0o600)
+        self.records['luks-header.bin'] = sha256(path)
+        self.finish()
+
+    def finish(self):
+        """Re-read every file from the drive and compare; write the manifest."""
+        os.sync()
+        for name, digest in self.records.items():
+            require(sha256(self.dir / name) == digest, f'Backup verification failed: {name}')
+        (self.dir / 'manifest.json').write_text(json.dumps(self.records, indent=1, sort_keys=True) + '\n')
+        os.sync()
+        print(f'Backup verified: {len(self.records)} files in {self.dir} (private: keep it offline)')
+
+
 def ask_password(label, minimum):
     while True:
         first = getpass.getpass(f'{label}: ')
@@ -340,26 +463,38 @@ def main():
     p.add_argument('--timezone', required=True); p.add_argument('--keymap', default='us')
     p.add_argument('--hostname', default='googlebook')
     p.add_argument('--desktop', choices=sorted(DESKTOPS), default='none')
+    p.add_argument('--dry-run', action='store_true', help='show the plan and stop; writes nothing')
+    p.add_argument('--backup', type=Path, metavar='DIR',
+                   help='save the factory boot partitions, partition table, calibration and LUKS header to DIR '
+                        '(a mounted external drive) and verify them before erasing')
     args = p.parse_args()
     require(os.geteuid() == 0, 'Run as root')
     require(board()[0] == 'Ruby', 'This script is for the Lenovo Googlebook 15 (Ruby)')
     require(re.fullmatch('[a-z][a-z0-9_-]{0,30}', args.user) and args.user != 'root', 'Invalid username')
     require((Path('/usr/share/zoneinfo') / args.timezone).is_file(), 'Unknown timezone')
-    require(subprocess.run(['curl', '-sfI', '--max-time', '15', FEDORA_CHECKSUM_URL], capture_output=True).returncode == 0,
-            'No network: connect Wi-Fi with iwctl first')
+    network = subprocess.run(['curl', '-sfI', '--max-time', '15', FEDORA_CHECKSUM_URL], capture_output=True).returncode == 0
     disk = args.disk
     disk_bytes = int(output(['blockdev', '--getsize64', disk]))
     primary, secondary = new_gpt(disk_bytes)
+    if args.dry_run:
+        return dry_run(disk, disk_bytes, primary, secondary, network)
+    require(network, 'No network: connect Wi-Fi with iwctl first')
+    backup = Backup(args.backup, disk) if args.backup else None
 
-    print(f'\nThis ERASES {disk} ({disk_bytes / 1e9:.0f} GB) and installs Fedora.')
+    print(f'\nThis ERASES {disk} ({disk_bytes / 1e9:.0f} GB) and installs Fedora.'
+          + (f' A backup goes to {backup.dir} first.' if backup else ' No backup (see --backup).'))
     require(input('Type ERASE to continue: ') == 'ERASE', 'Cancelled')
     disk_password = ask_password('Disk encryption password', 8)
     login_password = ask_password(f'Login/sudo password for {args.user}', 8)
 
     release_disk(disk)
+    if backup is not None:
+        backup.factory(disk, disk_bytes)
+        backup.calibration()
+        backup.finish()                      # verified before anything is erased
     gpt = write_table(disk, primary, secondary, disk_bytes)
     root_block, _ = part(disk, gpt, 'userdata')
-    luks_uuid, fstab = format_root(root_block, disk_password)
+    luks_uuid, fstab = format_root(root_block, disk_password, backup)
     del disk_password
     release = install_fedora(args, login_password).name
     del login_password

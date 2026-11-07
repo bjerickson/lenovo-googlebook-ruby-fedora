@@ -30,6 +30,8 @@ FEDORA_CHECKSUM_URL = ('https://dl.fedoraproject.org/pub/fedora/linux/releases/4
                        'Fedora-Container-45-1.4-x86_64-CHECKSUM')
 FEDORA_IMAGE_SHA256 = 'cfd51bdc8a26bc6f23c6993145e19e9a2be4c7af2aefa1f309c5e05e5beac197'
 FEDORA_KEY = '4F50A6114CD5C6976A7F1179655A4B02F577861E'
+# tools/build_usb.py puts the image and its signed CHECKSUM here inside the USB kit.
+FEDORA_CACHE = ROOT / 'cache/fedora'
 # Outside kernel-install's /boot/vmlinuz-<release> names, so dnf never touches them.
 FEDORA_KERNEL = '/boot/ruby-android/vmlinuz'
 FEDORA_INITRAMFS = '/boot/ruby-android/initramfs.img'

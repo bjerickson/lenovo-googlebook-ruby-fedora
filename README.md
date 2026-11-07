@@ -49,8 +49,9 @@ The firmware never boots `/boot`; it boots the Android partitions, which the ins
 
 | Path | Purpose |
 | --- | --- |
-| `tools/build_live.py`, `tools/write_usb.py` | Build and write the installer USB (console only, from a pinned Omarchy 4.0.4 ISO) |
-| `tools/install_fedora_ruby.py`, `tools/fedora.py` | One-shot installer, run from the USB |
+| `tools/build_usb.py` | One command: download and verify everything, build the installer USB image |
+| `tools/build_live.py`, `tools/write_usb.py` | Build and write the installer USB (console only, from a pinned Omarchy 4.0.4 ISO, with the Fedora image) |
+| `tools/install_fedora_ruby.py`, `tools/fedora.py` | One-shot installer, run from the USB (`--dry-run`, `--backup DIR`) |
 | `tools/kernel_update_fedora.py` | kernel-install hook: build, sign, validate and write new kernels; `rollback`, `status` |
 | `tools/fetch_ruby_vendor.py` | Stream Lenovo's `vendor_a` (speaker and sensor firmware) from Google's Ruby recovery image |
 | `tools/install_ruby_audio.sh`, `tools/install_ruby_sensors.sh` | Firmware from `vendor_a`; UCM, DAX, calibration |
