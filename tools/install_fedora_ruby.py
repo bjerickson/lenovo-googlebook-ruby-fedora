@@ -228,6 +228,15 @@ def vendor_tree(super_dev):
     return extract()
 
 
+def ishtp_module(release):
+    """cros_ec_ishtp for Fedora (not built there): connects the sensor hub's EC, giving cros-ec-light."""
+    src = TARGET / 'usr/src/ruby-cros-ec-ishtp-7.2.15'
+    if src.exists():
+        shutil.rmtree(src)
+    shutil.copytree(ROOT / 'assets/installed/cros-ec-ishtp', src)
+    chroot('dkms', 'install', '--force', 'ruby-cros-ec-ishtp/7.2.15', '-k', release)
+
+
 def extras(super_dev):
     subprocess.run(['modprobe', '-a', 'coreboot_table', 'vpd_sysfs'], capture_output=True)
     calibration = optional('speaker calibration capture', lambda: run(
@@ -358,7 +367,8 @@ def main():
     del login_password
     configure(args, fstab)
     framebuffer = optional('coreboot framebuffer modules (visible password prompt)', lambda: coreboot_modules(release))
-    found = dict(extras(part(disk, gpt, 'super')[0]), framebuffer=framebuffer)
+    light = optional('cros_ec_ishtp module (ambient light sensor)', lambda: ishtp_module(release))
+    found = dict(extras(part(disk, gpt, 'super')[0]), framebuffer=framebuffer, light_sensor_driver=light)
     kernel, initramfs = build_initramfs(release, framebuffer)
     cand = build_and_check_boot(gpt, luks_uuid, kernel, initramfs)
     save_json(TARGET / 'etc/asus-boot/install.json', dict(device=disk, disk_guid=gpt.guid, luks_uuid=luks_uuid,

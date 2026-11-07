@@ -26,3 +26,5 @@ The Ruby audio setup does not redistribute Lenovo or Google firmware. `tools/ins
 The audio diagnosis used the Linux Lapis board quirk and SOF topology sources. The [ExpertBook audio notes](https://github.com/burakgon/asus-expertbook-linux/tree/main/audio-fix) helped identify the matching `1043:15e4` speaker tuning. That project's patcher and firmware blobs are not incorporated. ExpertBook firmware must not be flashed onto a Googlebook.
 
 Source revisions are fixed in `tools/fetch_sources.py`. Generated live images contain the source and licenses of those fetched build tools so native boot images can be assembled without another network download.
+
+`assets/installed/cros-ec-ishtp/` is Linux kernel code under GPL-2.0, not MIT: `cros_ec_ishtp.c` and `cros_ec.h` from Linux v7.2.15 `drivers/platform/chrome/`, unmodified, with a Kbuild `Makefile` and `dkms.conf`, for kernels built without `CONFIG_CROS_EC_ISHTP` (Fedora).
