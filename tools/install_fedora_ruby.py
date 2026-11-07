@@ -46,6 +46,7 @@ VBMETA = '88434509-d9d1-487d-b82c-15ef964cbd4b'
 KEEP = ('super', 'boot_a', 'boot_b', 'vbmeta_a', 'vbmeta_b', 'init_boot_a', 'init_boot_b',
         'vendor_boot_a', 'vendor_boot_b', 'misc')
 SLOT_A = ('boot_a', 'init_boot_a', 'vendor_boot_a', 'vbmeta_a')
+COREBOOT_DKMS = 'ruby-coreboot-7.3.3'
 
 
 def new_gpt(disk_bytes):
@@ -180,6 +181,21 @@ def optional(label, fn):
         return False
 
 
+def coreboot_modules(release):
+    """Build coreboot_table/framebuffer-coreboot/vpd-sysfs for Fedora's kernel (DKMS rebuilds them on updates).
+
+    Fedora lacks CONFIG_GOOGLE_FIRMWARE; with these in the initramfs the firmware framebuffer becomes a
+    simple-framebuffer that the built-in simpledrm drives, so the disk password prompt is visible.
+    """
+    src = TARGET / f'usr/src/{COREBOOT_DKMS}'
+    if src.exists():
+        shutil.rmtree(src)
+    shutil.copytree(ROOT / 'assets/installed/coreboot-fb', src)
+    chroot('dkms', 'install', '--force', COREBOOT_DKMS.replace('-7', '/7', 1), '-k', release)
+    put('/etc/ruby-boot/dracut.conf.d/coreboot-fb.conf', 'force_drivers+=" coreboot_table framebuffer_coreboot "\n')
+    put('/etc/modules-load.d/ruby-coreboot.conf', 'coreboot_table\nframebuffer_coreboot\nvpd_sysfs\n')
+
+
 def extras():
     subprocess.run(['modprobe', '-a', 'coreboot_table', 'vpd_sysfs'], capture_output=True)
     calibration = optional('speaker calibration capture', lambda: run(
@@ -189,7 +205,7 @@ def extras():
     return dict(calibration=calibration, audio=audio, sensors=sensors)
 
 
-def build_initramfs(release):
+def build_initramfs(release, framebuffer):
     put('/etc/ruby-boot/dracut.conf', (ROOT / 'assets/fedora/dracut.conf').read_text())
     (TARGET / 'etc/ruby-boot/dracut.conf.d').mkdir(exist_ok=True)
     kernel = TARGET / FEDORA_KERNEL.lstrip('/')
@@ -197,7 +213,7 @@ def build_initramfs(release):
     shutil.copyfile(TARGET / 'usr/lib/modules' / release / 'vmlinuz', kernel)
     chroot('dracut', '--force', '--conf', '/etc/ruby-boot/dracut.conf', '--confdir', '/etc/ruby-boot/dracut.conf.d',
            '--kver', release, FEDORA_INITRAMFS)
-    check_initramfs(TARGET / FEDORA_INITRAMFS.lstrip('/'))
+    check_initramfs(TARGET / FEDORA_INITRAMFS.lstrip('/'), framebuffer=framebuffer)
     return kernel, TARGET / FEDORA_INITRAMFS.lstrip('/')
 
 
@@ -303,8 +319,9 @@ def main():
     release = install_fedora(args, login_password).name
     del login_password
     configure(args, fstab)
-    found = extras()
-    kernel, initramfs = build_initramfs(release)
+    framebuffer = optional('coreboot framebuffer modules (visible password prompt)', lambda: coreboot_modules(release))
+    found = dict(extras(), framebuffer=framebuffer)
+    kernel, initramfs = build_initramfs(release, framebuffer)
     cand = build_and_check_boot(gpt, luks_uuid, kernel, initramfs)
     save_json(TARGET / 'etc/asus-boot/install.json', dict(device=disk, disk_guid=gpt.guid, luks_uuid=luks_uuid,
                                                           disk_bytes=disk_bytes, partitions=gpt.partitions(),
@@ -316,7 +333,10 @@ def main():
     run(['umount', '-R', TARGET])
     run(['cryptsetup', 'close', MAPPER])
     print('\nDone. Power off, remove the USB, choose "Boot from internal disk".')
-    print('The screen stays black at the disk password: wait ~15 s, type it, press Enter.')
+    if framebuffer:
+        print('Type the disk password at the prompt.')
+    else:
+        print('The screen stays black at the disk password: wait ~15 s, type it, press Enter.')
     missing = [k for k, ok in found.items() if not ok]
     if missing:
         print('Not set up (see warnings above):', ', '.join(missing))

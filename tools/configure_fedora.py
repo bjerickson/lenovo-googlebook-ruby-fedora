@@ -238,12 +238,14 @@ def configure(args):
     print('Configuration complete. Next: native.py build, validate, commit.')
 
 
-def check_initramfs(path):
+def check_initramfs(path, framebuffer=False):
     listing = output(['arch-chroot', TARGET, 'lsinitrd', '/' + str(path.relative_to(TARGET))])
     for private in ('avb-private', 'luks-header', '.nmconnection', 'authorized_keys', 'speaker-calibration'):
         require(private not in listing, 'Private file in initramfs: ' + private)
     for needed in ('systemd-cryptsetup', 'nvme', 'dm-crypt', 'btrfs'):
         require(needed in listing, 'Initramfs lacks ' + needed)
+    if framebuffer:
+        require('framebuffer-coreboot' in listing and 'coreboot_table' in listing, 'Initramfs lacks the coreboot framebuffer')
     require('/xe.ko' not in listing and '/i915.ko' not in listing, 'Initramfs must not carry the GPU driver')
     size = path.stat().st_size
     require(size < 29 * 1024**2, f'Initramfs is {size / 2**20:.1f} MiB; the vendor_boot budget is 29 MiB')
