@@ -277,7 +277,10 @@ def build_and_check_boot(gpt, luks_uuid, kernel, initramfs):
     require(result.returncode == 0 and 'vb2api_load_kernel() returned 0' in result.stdout,
             f'Android loader rejected the boot set; nothing written to slot A. Log: {state}/loader-validation.log')
     put('/etc/kernel/cmdline', cmdline + '\n')
-    shutil.copy2(cand / 'avb-private.pem', TARGET / 'etc/asus-boot/avb-private.pem')
+    key = TARGET / 'etc/asus-boot/avb-private.pem'
+    key.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    shutil.copy2(cand / 'avb-private.pem', key)
+    key.chmod(0o600)
     return cand
 
 
