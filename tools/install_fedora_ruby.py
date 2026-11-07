@@ -364,6 +364,10 @@ def main():
     save_json(TARGET / 'etc/asus-boot/install.json', dict(device=disk, disk_guid=gpt.guid, luks_uuid=luks_uuid,
                                                           disk_bytes=disk_bytes, partitions=gpt.partitions(),
                                                           kernel_release=release, **found))
+    # dnf kernel updates go to slot A from now on (tools/kernel_update_fedora.py).
+    from tools.kernel_update_fedora import HOOK, HOOK_TEXT
+    put('/' + str(HOOK).lstrip('/'), HOOK_TEXT.replace(str(ROOT), KIT), 0o755)
+    save_json(TARGET / 'var/lib/asus-boot/kernel-update/state.json', dict(slot_kernel=release, installed=True))
     relabel()
     chroot('chown', '-R', f'{args.user}:{args.user}', f'/home/{args.user}')
     write_slot_a(disk, gpt, cand)
