@@ -192,16 +192,44 @@ def coreboot_modules(release):
         shutil.rmtree(src)
     shutil.copytree(ROOT / 'assets/installed/coreboot-fb', src)
     chroot('dkms', 'install', '--force', COREBOOT_DKMS.replace('-7', '/7', 1), '-k', release)
-    put('/etc/ruby-boot/dracut.conf.d/coreboot-fb.conf', 'force_drivers+=" coreboot_table framebuffer_coreboot "\n')
+    put('/etc/ruby-boot/dracut.conf.d/coreboot-fb.conf', 'drivers+=" coreboot_table framebuffer_coreboot "\n'
+        'force_drivers+=" coreboot_table framebuffer_coreboot "\n')
     put('/etc/modules-load.d/ruby-coreboot.conf', 'coreboot_table\nframebuffer_coreboot\nvpd_sysfs\n')
 
 
-def extras():
+def vendor_tree(super_dev):
+    """Extract Lenovo's vendor_a: from this laptop's super, else from Google's Ruby recovery image.
+
+    Returns the chroot path of the extracted tree. A super left mid-way through a virtual A/B
+    merge holds an inconsistent vendor_a that fsck.erofs rejects; the recovery image does not.
+    """
+    rel = '/var/tmp/ruby-vendor'
+    work = TARGET / rel.lstrip('/')
+
+    def extract():
+        chroot('fsck.erofs', f'--extract={rel}/vendor', '--no-preserve', f'{rel}/vendor_a.img')
+        return f'{rel}/vendor'
+
+    shutil.rmtree(work, ignore_errors=True); work.mkdir(parents=True)
+    try:
+        chroot('lpunpack', '-p', 'vendor_a', str(super_dev), rel)
+        return extract()
+    except subprocess.CalledProcessError:
+        print('This laptop\'s vendor_a is unusable (unmerged Android update); fetching it from Google\'s recovery image.')
+    shutil.rmtree(work); work.mkdir(parents=True)
+    run([sys.executable, '-I', ROOT / 'tools/fetch_ruby_vendor.py', '--output', work / 'vendor_a.img'])
+    return extract()
+
+
+def extras(super_dev):
     subprocess.run(['modprobe', '-a', 'coreboot_table', 'vpd_sysfs'], capture_output=True)
     calibration = optional('speaker calibration capture', lambda: run(
         [sys.executable, '-I', ROOT / 'assets/installed/ruby-speaker-calibration.py', '--save', TARGET / CALIBRATION]))
-    audio = optional('speaker firmware from super', lambda: chroot('sh', f'{KIT}/tools/install_ruby_audio.sh'))
-    sensors = optional('light sensor firmware from super', lambda: chroot('sh', f'{KIT}/tools/install_ruby_sensors.sh'))
+    tree = []
+    found = optional('Lenovo vendor firmware image', lambda: tree.append(vendor_tree(super_dev)))
+    audio = found and optional('speaker firmware', lambda: chroot('env', f'VENDOR_DIR={tree[0]}', 'sh', f'{KIT}/tools/install_ruby_audio.sh'))
+    sensors = found and optional('light sensor firmware', lambda: chroot('env', f'VENDOR_DIR={tree[0]}', 'sh', f'{KIT}/tools/install_ruby_sensors.sh'))
+    shutil.rmtree(TARGET / 'var/tmp/ruby-vendor', ignore_errors=True)
     return dict(calibration=calibration, audio=audio, sensors=sensors)
 
 
@@ -320,7 +348,7 @@ def main():
     del login_password
     configure(args, fstab)
     framebuffer = optional('coreboot framebuffer modules (visible password prompt)', lambda: coreboot_modules(release))
-    found = dict(extras(), framebuffer=framebuffer)
+    found = dict(extras(part(disk, gpt, 'super')[0]), framebuffer=framebuffer)
     kernel, initramfs = build_initramfs(release, framebuffer)
     cand = build_and_check_boot(gpt, luks_uuid, kernel, initramfs)
     save_json(TARGET / 'etc/asus-boot/install.json', dict(device=disk, disk_guid=gpt.guid, luks_uuid=luks_uuid,

@@ -17,14 +17,21 @@ for tool in lpunpack fsck.erofs; do
 done
 
 fw=intel/ish/ish_ptl_62b0f067_6c687233.bin
-super=$(lsblk -rno PATH,PARTLABEL | awk '$2 == "super" {print $1}')
-[ -b "$super" ] || { echo 'Factory super partition not found' >&2; exit 1; }
-work=$(mktemp -d -p /var/tmp)
-trap 'rm -rf "$work"' EXIT
-lpunpack -p vendor_a "$super" "$work"
-mkdir "$work/vendor"
-fsck.erofs --extract="$work/vendor" --no-preserve "$work/vendor_a.img" >/dev/null
-[ -s "$work/vendor/firmware/$fw" ] || { echo "Factory image lacks $fw" >&2; exit 1; }
-install -Dm644 "$work/vendor/firmware/$fw" "/usr/lib/firmware/updates/$fw"
+# VENDOR_DIR: an already-extracted vendor_a tree (e.g. from Google's recovery image via
+# tools/fetch_ruby_vendor.py, when this laptop's own super holds an unmerged update).
+if [ -n "${VENDOR_DIR:-}" ]; then
+    vendor=$VENDOR_DIR
+else
+    super=$(lsblk -rno PATH,PARTLABEL | awk '$2 == "super" {print $1}')
+    [ -b "$super" ] || { echo 'Factory super partition not found' >&2; exit 1; }
+    work=$(mktemp -d -p /var/tmp)
+    trap 'rm -rf "$work"' EXIT
+    lpunpack -p vendor_a "$super" "$work"
+    mkdir "$work/vendor"
+    fsck.erofs --extract="$work/vendor" --no-preserve "$work/vendor_a.img" >/dev/null
+    vendor=$work/vendor
+fi
+[ -s "$vendor/firmware/$fw" ] || { echo "Factory image lacks $fw" >&2; exit 1; }
+install -Dm644 "$vendor/firmware/$fw" "/usr/lib/firmware/updates/$fw"
 install -Dm644 "$assets/ruby-sensors.conf" /etc/modprobe.d/ruby-sensors.conf
 echo 'Ruby sensor hub firmware installed and acpi_als blacklisted; reboot to load them.'

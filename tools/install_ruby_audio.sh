@@ -12,24 +12,31 @@ for tool in lpunpack fsck.erofs; do
     command -v $tool >/dev/null || { echo "Missing $tool: install android-tools and erofs-utils (dnf or pacman)" >&2; exit 1; }
 done
 
-super=$(lsblk -rno PATH,PARTLABEL | awk '$2 == "super" {print $1}')
-[ -b "$super" ] || { echo 'Factory super partition not found' >&2; exit 1; }
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
-lpunpack -p vendor_a "$super" "$work"
-mkdir "$work/vendor"
-fsck.erofs --extract="$work/vendor" --no-preserve "$work/vendor_a.img" >/dev/null
+# VENDOR_DIR: an already-extracted vendor_a tree (e.g. from Google's recovery image via
+# tools/fetch_ruby_vendor.py, when this laptop's own super holds an unmerged update).
+if [ -n "${VENDOR_DIR:-}" ]; then
+    vendor=$VENDOR_DIR
+else
+    super=$(lsblk -rno PATH,PARTLABEL | awk '$2 == "super" {print $1}')
+    [ -b "$super" ] || { echo 'Factory super partition not found' >&2; exit 1; }
+    work=$(mktemp -d -p /var/tmp)
+    trap 'rm -rf "$work"' EXIT
+    lpunpack -p vendor_a "$super" "$work"
+    mkdir "$work/vendor"
+    fsck.erofs --extract="$work/vendor" --no-preserve "$work/vendor_a.img" >/dev/null
+    vendor=$work/vendor
+fi
 for f in tas2563RCA4.bin tas2563_coef.bin; do
-    [ -s "$work/vendor/firmware/$f" ] || { echo "Factory image lacks $f" >&2; exit 1; }
-    install -Dm644 "$work/vendor/firmware/$f" "/usr/lib/firmware/updates/$f"
+    [ -s "$vendor/firmware/$f" ] || { echo "Factory image lacks $f" >&2; exit 1; }
+    install -Dm644 "$vendor/firmware/$f" "/usr/lib/firmware/updates/$f"
 done
 # Factory Ruby SOF firmware with Dolby DAX, its topology, and the DAX tuning.
 for f in intel/sof-ipc4/ptl/ruby/sof-ptl.ri intel/sof-ipc4/ptl/ruby/sof-ptl-openmodules.ri \
          intel/sof-ipc4-tplg/ruby/sof-ptl-tas2563-rt5682.tplg; do
-    [ -s "$work/vendor/firmware/$f" ] || { echo "Factory image lacks $f" >&2; exit 1; }
-    install -Dm644 "$work/vendor/firmware/$f" "/usr/lib/firmware/updates/$f"
+    [ -s "$vendor/firmware/$f" ] || { echo "Factory image lacks $f" >&2; exit 1; }
+    install -Dm644 "$vendor/firmware/$f" "/usr/lib/firmware/updates/$f"
 done
-install -Dm644 "$work/vendor/etc/audio/dax/ruby/dax_param.bin" /usr/lib/firmware/updates/intel/sof-ipc4-tplg/ruby/dax_param.bin
+install -Dm644 "$vendor/etc/audio/dax/ruby/dax_param.bin" /usr/lib/firmware/updates/intel/sof-ipc4-tplg/ruby/dax_param.bin
 
 install -Dm644 "$assets/ruby-audio.conf" /etc/modprobe.d/ruby-audio.conf
 install -Dm644 "$assets/ruby-dax.conf" /etc/modprobe.d/ruby-dax.conf
