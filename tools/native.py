@@ -184,7 +184,7 @@ def format_root(args):
         run(['btrfs', 'subvolume', 'create', TARGET / name])
     run(['umount', TARGET])
     run(['mount', '-o', 'noatime,compress=zstd:3,subvol=@', mapper, TARGET])
-    for subvol, relative in [('@home', 'home'), ('@log', 'var/log'), ('@pkg', 'var/cache/pacman/pkg')]:
+    for subvol, relative in [('@home', 'home'), ('@log', 'var/log'), ('@pkg', facts.get('pkg_cache', 'var/cache/pacman/pkg'))]:
         folder = TARGET / relative
         folder.mkdir(parents=True, exist_ok=True)
         run(['mount', '-o', 'noatime,compress=zstd:3,subvol=' + subvol, mapper, folder])
@@ -207,7 +207,7 @@ def build(args):
     mounted()
     require((STATE / 'configured.json').is_file(), 'Configure target first')
     configured = read_json(STATE / 'configured.json')
-    # CachyOS records its own kernel; the Omarchy path uses the pinned ISO kernel.
+    # CachyOS and Fedora record their own kernel; the Omarchy path uses the pinned ISO kernel.
     kernel = TARGET / configured.get('kernel', '/boot/vmlinuz-linux-t2').lstrip('/')
     initramfs = TARGET / configured.get('initramfs', '/boot/initramfs-linux-t2.img').lstrip('/')
     kernel_sha256 = configured.get('kernel_sha256', KERNEL_SHA256)
@@ -215,7 +215,10 @@ def build(args):
     # can change without rebuilding the boot set; the command line would override it.
     xe = XE_PARAMETERS if 'kernel' not in configured else {'gsc_firmware_path': ''}
     mapper = board()[1]['mapper']
-    cmdline = (f"cryptdevice=UUID={p['luks_uuid']}:{mapper} root=/dev/mapper/{mapper} rootfstype=btrfs rootflags=subvol=@ rw "
+    # mkinitcpio's encrypt hook reads cryptdevice=; Fedora's systemd initrd reads rd.luks.name=.
+    unlock = (f"rd.luks.name={p['luks_uuid']}={mapper} rd.driver.blacklist=xe" if configured.get('distro') == 'fedora'
+              else f"cryptdevice=UUID={p['luks_uuid']}:{mapper}")
+    cmdline = (f"{unlock} root=/dev/mapper/{mapper} rootfstype=btrfs rootflags=subvol=@ rw "
                'zswap.enabled=0 modprobe.blacklist=xe initramfs_async=0 console=tty0 loglevel=3 log_buf_len=4M '
                'printk.time=1 panic=30 fbcon=nodefer plymouth.enable=0 rd.plymouth=0 ' +
                ' '.join('xe.' + k + '=' + v for k, v in xe.items()))

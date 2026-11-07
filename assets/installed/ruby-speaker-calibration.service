@@ -1,5 +1,5 @@
 [Unit]
-Description=Load factory TAS2563 speaker calibration from coreboot VPD
+Description=Load factory TAS2563 speaker calibration (coreboot VPD or saved copy)
 # The calibration control appears once SOF (loaded by ruby-gpu.service) and the
 # amplifier firmware are up; the script waits for it. It must run before the
 # first playback, when the amplifiers load their playback configuration.

@@ -24,16 +24,31 @@ BOARDS = {
     'Lapis': dict(gpu='0xb090', audio_subsystem='0x15e4', profile='lapis-512gb.json', xe_reload=True,
                   mapper='omarchy_root', label='Omarchy'),
     'Ruby': dict(gpu='0xb090', audio_subsystem='0x0000', profile='lapis-512gb.json', xe_reload=False,
-                 mapper='cachyos-root', label='CachyOS'),
+                 mapper='fedora-root', label='Fedora', pkg_cache='var/cache/libdnf5'),
 }
-# Ruby systems installed before the rename still open the disk as omarchy_root.
-ROOT_MAPPERS = ('cachyos-root', 'omarchy_root')
+# Root mappers the installed-system tools accept (Fedora fork first; CachyOS and
+# pre-rename Omarchy names kept so upstream tools still recognise their installs).
+ROOT_MAPPERS = ('fedora-root', 'cachyos-root', 'omarchy_root')
 # CachyOS target (Ruby). The kernel is pinned by the installed system; its hash
 # is recorded at install time rather than shipped, because CachyOS repos only
 # carry the current build.
 CACHYOS_KEY = '882DCFE48E2051D48E2562ABF3B607488DB35A47'
 CACHYOS_KERNEL = '/boot/vmlinuz-linux-cachyos'
 CACHYOS_INITRAMFS = '/boot/initramfs-linux-cachyos-android.img'
+# Fedora target (Ruby). Bootstrapped from Fedora's signed OCI container image,
+# then completed by the target's own dnf5. The image hash is pinned and the
+# CHECKSUM file's signature is checked against Fedora 45's primary key, whose
+# fingerprint is published at https://fedoraproject.org/security/.
+FEDORA_RELEASE = '45'
+FEDORA_IMAGE_URL = ('https://dl.fedoraproject.org/pub/fedora/linux/releases/45/Container/x86_64/images/'
+                    'Fedora-Container-Base-Generic-45-1.4.x86_64.oci.tar.xz')
+FEDORA_CHECKSUM_URL = ('https://dl.fedoraproject.org/pub/fedora/linux/releases/45/Container/x86_64/images/'
+                       'Fedora-Container-45-1.4-x86_64-CHECKSUM')
+FEDORA_IMAGE_SHA256 = 'cfd51bdc8a26bc6f23c6993145e19e9a2be4c7af2aefa1f309c5e05e5beac197'
+FEDORA_KEY = '4F50A6114CD5C6976A7F1179655A4B02F577861E'
+# Outside kernel-install's /boot/vmlinuz-<release> names, so dnf never touches them.
+FEDORA_KERNEL = '/boot/ruby-android/vmlinuz'
+FEDORA_INITRAMFS = '/boot/ruby-android/initramfs.img'
 
 
 def require(condition, message):
