@@ -9,7 +9,8 @@
 # light sensor. The kernel picks the file by name (CRC32 of "Google" and "Ruby").
 # Also blacklists acpi_als, the firmware's ACPI light sensor, which always reads 0.
 set -eu
-assets=$(dirname "$0")/../assets/installed
+here=$(dirname "$(readlink -f "$0")")
+assets=$here/../assets/installed
 [ "$(id -u)" = 0 ] || { echo 'Run as root' >&2; exit 1; }
 [ "$(cat /sys/class/dmi/id/product_name)" = Ruby ] || { echo 'Not a Ruby board' >&2; exit 1; }
 for tool in lpunpack fsck.erofs; do
@@ -28,7 +29,14 @@ else
     trap 'rm -rf "$work"' EXIT
     lpunpack -p vendor_a "$super" "$work"
     mkdir "$work/vendor"
-    fsck.erofs --extract="$work/vendor" --no-preserve "$work/vendor_a.img" >/dev/null
+    if ! fsck.erofs --extract="$work/vendor" --no-preserve "$work/vendor_a.img" >/dev/null 2>&1; then
+        # A super left mid-way through a virtual A/B merge holds an inconsistent vendor_a.
+        echo "This laptop's vendor_a is unusable (unmerged Android update); fetching it from Google's recovery image (~5.5 GB download)."
+        rm -rf "$work/vendor" "$work/vendor_a.img"
+        mkdir "$work/vendor"
+        python3 -I "$here/fetch_ruby_vendor.py" --output "$work/vendor_a.img"
+        fsck.erofs --extract="$work/vendor" --no-preserve "$work/vendor_a.img" >/dev/null
+    fi
     vendor=$work/vendor
 fi
 [ -s "$vendor/firmware/$fw" ] || { echo "Factory image lacks $fw" >&2; exit 1; }

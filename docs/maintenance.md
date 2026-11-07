@@ -101,4 +101,4 @@ The root is Btrfs (`@`, `@home`, `@log`, `@pkg`) and `snapper` is installed. A r
 
 - Do not relock the bootloader or leave developer mode: the firmware would refuse the self-signed boot images.
 - Do not install GRUB, shim or systemd-boot, and do not repartition the disk: the firmware boots only the named Android partitions.
-- Do not delete the `super` partition until you no longer need to rerun `install_ruby_audio.sh` or `install_ruby_sensors.sh` (they can also use Google's recovery image instead: `tools/fetch_ruby_vendor.py`).
+- Do not delete the `super` partition until you no longer need to rerun `install_ruby_audio.sh` or `install_ruby_sensors.sh` (without it they fall back to downloading `vendor_a` from Google's recovery image, about 5.5 GB).

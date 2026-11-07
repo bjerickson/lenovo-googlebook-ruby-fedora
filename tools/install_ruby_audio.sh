@@ -23,7 +23,14 @@ else
     trap 'rm -rf "$work"' EXIT
     lpunpack -p vendor_a "$super" "$work"
     mkdir "$work/vendor"
-    fsck.erofs --extract="$work/vendor" --no-preserve "$work/vendor_a.img" >/dev/null
+    if ! fsck.erofs --extract="$work/vendor" --no-preserve "$work/vendor_a.img" >/dev/null 2>&1; then
+        # A super left mid-way through a virtual A/B merge holds an inconsistent vendor_a.
+        echo "This laptop's vendor_a is unusable (unmerged Android update); fetching it from Google's recovery image (~5.5 GB download)."
+        rm -rf "$work/vendor" "$work/vendor_a.img"
+        mkdir "$work/vendor"
+        python3 -I "$here/fetch_ruby_vendor.py" --output "$work/vendor_a.img"
+        fsck.erofs --extract="$work/vendor" --no-preserve "$work/vendor_a.img" >/dev/null
+    fi
     vendor=$work/vendor
 fi
 for f in tas2563RCA4.bin tas2563_coef.bin; do

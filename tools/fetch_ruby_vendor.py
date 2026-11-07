@@ -8,10 +8,11 @@ downloading once they are complete. Needs only Python.
 
     python3 tools/fetch_ruby_vendor.py --output /var/tmp/vendor_a.img
 
-Then: fsck.erofs --extract=DIR vendor_a.img (tools/install_ruby_firmware.sh does this).
+Then: fsck.erofs --extract=DIR vendor_a.img (tools/install_ruby_audio.sh and install_ruby_sensors.sh take the tree as VENDOR_DIR).
 """
 import argparse
 from pathlib import Path
+import shutil
 import struct
 import sys
 import urllib.request
@@ -125,6 +126,13 @@ def main():
     ext = lp_extents(s, base, a.partition)
     total = sum(n for _, n in ext)
     print(f'{a.partition}: {len(ext)} extents, {total >> 20} MiB', flush=True)
+    a.output.parent.mkdir(parents=True, exist_ok=True)
+    have = shutil.disk_usage(a.output.parent).free
+    if a.output.exists():
+        have += a.output.stat().st_size
+    if have < total:
+        raise SystemExit(f'Not enough space in {a.output.parent}: {a.partition} needs {total >> 20} MiB, '
+                         f'{have >> 20} MiB free')
     # Extents must be read in disk order; write each at its logical position.
     logical, off = [], 0
     for phys, n in ext:
