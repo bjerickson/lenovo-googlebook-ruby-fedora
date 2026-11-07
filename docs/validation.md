@@ -27,6 +27,7 @@ One laptop: Lenovo Googlebook 15 (DMI `Google / Ruby`), 512 GB NVMe, firmware `G
 | Suspend | Suspend and resume |
 | SELinux | Enforcing |
 | Power mode | `install_power_mode.sh` (22 W on AC) |
+| `install_ruby_audio.sh` rerun | Local `vendor_a` rejected by `fsck.erofs`; fell back to Google's recovery image (369 MiB `vendor_a`, 5.5 GB downloaded) and completed |
 
 Not yet tested on Fedora: a kernel update through the hook (no newer kernel had arrived when this was written), GNOME, and the charge-limit rule.
 

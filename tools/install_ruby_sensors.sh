@@ -33,6 +33,9 @@ else
         # A super left mid-way through a virtual A/B merge holds an inconsistent vendor_a.
         echo "This laptop's vendor_a is unusable (unmerged Android update); fetching it from Google's recovery image (~5.5 GB download)."
         rm -rf "$work/vendor" "$work/vendor_a.img"
+        # vendor_a is 369 MiB; room for the image and its extracted tree.
+        free=$(df -Pk "$work" | awk 'NR == 2 {print $4}')
+        [ "$free" -ge 1048576 ] || { echo "Need 1 GiB free in /var/tmp; $((free / 1024)) MiB available" >&2; exit 1; }
         mkdir "$work/vendor"
         python3 -I "$here/fetch_ruby_vendor.py" --output "$work/vendor_a.img"
         fsck.erofs --extract="$work/vendor" --no-preserve "$work/vendor_a.img" >/dev/null
