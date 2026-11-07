@@ -140,7 +140,7 @@ def install_fedora(args, login_password):
     shutil.rmtree(work)
     dnf('upgrade', '--refresh')
     dnf('reinstall', '--skip-unavailable', '*')
-    dnf('install', *PACKAGES, *DESKTOPS[args.desktop])
+    dnf('install', '@core', 'chrony', *PACKAGES, *DESKTOPS[args.desktop])
     chroot('useradd', '-m', '-G', 'wheel', '-c', args.name, args.user)
     chroot('chpasswd', input=(args.user + ':' + login_password + '\n').encode())
     chroot('passwd', '-l', 'root')
@@ -161,6 +161,13 @@ def configure(args, fstab):
     put('/etc/modprobe.d/ruby-audio.conf', (ROOT / 'assets/installed/ruby-audio.conf').read_text())
     put('/etc/systemd/logind.conf.d/ruby-power-key.conf', (ROOT / 'assets/installed/logind/ruby-power-key.conf').read_text())
     mask('/etc/systemd/system-generators/systemd-gpt-auto-generator')
+    # A container-image bootstrap never applies Fedora's presets, so nothing (not even a console
+    # login) is enabled. enable-only never disables units or touches masked ones.
+    chroot('systemctl', 'preset-all', '--preset-mode=enable-only')
+    # Fedora 45 presets use kmscon for VT logins. The display moves from the coreboot framebuffer
+    # to Xe during boot; the kernel console (fbcon) is what is proven across that handover here.
+    subprocess.run(['arch-chroot', TARGET, 'systemctl', 'disable', 'kmsconvt@.service'], check=False)
+    chroot('systemctl', 'enable', 'getty@.service')
     chroot('systemctl', 'enable', 'ruby-gpu.service', 'NetworkManager.service', 'systemd-resolved.service')
     chroot('systemctl', 'mask', 'sshd.service', 'efi.mount', 'efi.automount')
     chroot('systemctl', 'set-default', 'graphical.target' if args.desktop != 'none' else 'multi-user.target')
