@@ -16,6 +16,10 @@ This **replaces Googlebook OS entirely**: `userdata` (~464 GB) becomes the encry
 | Package cache subvolume | `/var/cache/pacman/pkg` | `/var/cache/libdnf5` |
 | Speaker calibration | read from VPD at every boot | captured from VPD **once, at install**, into `/etc/ruby/speaker-calibration` (Fedora's kernel lacks `CONFIG_GOOGLE_FIRMWARE`) |
 
+## RAM-only backup
+
+`backup --in-ram` keeps the backup in `/run/lapis-install/ram-backup` (tmpfs) instead of on an external drive. The install still needs it: `format` stores the LUKS header there, and `commit` uses the original bytes to restore the boot regions if a write fails. It disappears at power-off, so nothing outside the laptop can undo the installation; a factory recovery USB is then the only way back to Googlebook OS. A successful commit still archives the install state, including that backup, on the encrypted root under `/var/lib/asus-boot/installation`. It needs about 2 GB free in `/run`; if `backup` says otherwise, run `mount -o remount,size=8G /run`. Do not reboot the live session between `backup` and `commit`.
+
 ## Known gaps
 
 - **Blank screen at the disk password.** Fedora's kernel has no coreboot framebuffer driver. If Depthcharge does not hand over a framebuffer that `simpledrm` can use, the LUKS prompt is invisible: type the password blind and press Enter. Xe takes over the display after root is mounted. Check on the live USB first: `dmesg | grep -i -e simpledrm -e simple-framebuffer`.
@@ -30,11 +34,9 @@ cd /opt/asus-googlebook-omarchy
 iwctl                                    # station wlan0 connect YOUR_SSID
 curl -I https://dl.fedoraproject.org
 
-# 1. Inspect and back up (unchanged)
+# 1. Inspect and back up
 python3 tools/native.py plan --device /dev/nvme0n1
-mount /dev/sdX1 /run/media/backup        # ext4 backup drive
-python3 tools/native.py backup --destination /run/media/backup/ruby-original
-python3 tools/native.py verify-backup /run/media/backup/ruby-original
+python3 tools/native.py backup --in-ram   # or --destination /run/media/backup/ruby-original on an ext4 drive
 
 # 2. Format userdata only (unchanged)
 python3 tools/native.py format
@@ -42,7 +44,7 @@ python3 tools/native.py format --apply
 
 # 3. Install and configure Fedora
 python3 tools/configure_fedora.py packages --user YOU --name 'Your Name' --timezone America/Chicago --keymap us
-python3 tools/configure_fedora.py configure     # also saves speaker calibration to /mnt and the backup drive
+python3 tools/configure_fedora.py configure     # also saves speaker calibration to /mnt (and the backup)
 
 # 4. Build and validate the boot set (unchanged)
 mkdir -p /mnt/opt/lapis-kit && cp -a . /mnt/opt/lapis-kit/

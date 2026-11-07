@@ -125,5 +125,48 @@ class SafetyTests(unittest.TestCase):
             self.assertTrue(all(x['restored'] for x in results))
 
 
+    def _ram_backup(self, state):
+        dest = state / 'ram-backup'; dest.mkdir()
+        (state / 'plan.json').write_text('{"x": 1}'); (dest / 'plan.json').write_text('{"x": 1}')
+        (dest / 'manifest.json').write_text(json.dumps(dict(records=[], disk_guid='g')))
+        (state / 'backup.json').write_text(json.dumps(dict(path=str(dest), manifest_sha256=sha256(dest / 'manifest.json'), in_ram=True)))
+        return dest
+
+    def test_ram_backup_skips_external_check_only_in_session_tmpfs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp); dest = self._ram_backup(state)
+            with mock.patch.object(native, 'STATE', state), mock.patch.object(native, 'RAM_BACKUP', dest), \
+                 mock.patch.object(native, 'external', side_effect=AssertionError('external check must be skipped')):
+                with mock.patch.object(native, 'in_tmpfs', return_value=True):
+                    self.assertEqual(native.checked_backup(Path('/dev/nvme0n1')), dest)
+                with mock.patch.object(native, 'in_tmpfs', return_value=False):
+                    with self.assertRaises(RuntimeError): native.checked_backup(Path('/dev/nvme0n1'))
+            # A record claiming in_ram but pointing elsewhere is refused.
+            rec = json.loads((state / 'backup.json').read_text()); rec['path'] = str(state)
+            (state / 'backup.json').write_text(json.dumps(rec))
+            with mock.patch.object(native, 'STATE', state), mock.patch.object(native, 'RAM_BACKUP', dest), \
+                 mock.patch.object(native, 'in_tmpfs', return_value=True):
+                with self.assertRaises(RuntimeError): native.checked_backup(Path('/dev/nvme0n1'))
+
+    def test_commit_with_ram_backup_archives_only_to_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp); state = folder / 'state'; state.mkdir(); (state / 'candidate').mkdir()
+            target = folder / 'mnt'; target.mkdir()
+            dest = state / 'ram-backup'; dest.mkdir()
+            manifest = state / 'candidate/manifest.json'; manifest.write_text('{}')
+            device = folder / 'disk'; original = bytes(1024); device.write_bytes(original)
+            regions = [(0, b'A' * 512, original[:512])]
+            (state / 'validated.json').write_text(json.dumps(dict(manifest_sha256=sha256(manifest),
+                                                   regions=[dict(offset=o, sha256=native.digest(n)) for o, n, _ in regions])))
+            with mock.patch.object(native, 'STATE', state), mock.patch.object(native, 'TARGET', target), \
+                 mock.patch.object(native, 'RAM_BACKUP', dest), \
+                 mock.patch.object(native, 'current', return_value=(dict(disk_guid='g'), device, None)), \
+                 mock.patch.object(native, 'mounted'), mock.patch.object(native, 'checked_backup', return_value=dest), \
+                 mock.patch.object(native, 'candidate_regions', return_value=regions), mock.patch.object(native, 'typed'):
+                native.commit(argparse.Namespace(apply=True))
+            self.assertEqual(device.read_bytes()[:512], b'A' * 512)
+            self.assertTrue((target / 'var/lib/asus-boot/installation/ram-backup').is_dir())
+            self.assertFalse((dest / 'installed-state').exists())
+
 if __name__ == '__main__':
     unittest.main()

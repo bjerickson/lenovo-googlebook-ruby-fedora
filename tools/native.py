@@ -19,6 +19,8 @@ from lapis.boot import build_set
 
 NAMES = ('boot_a', 'init_boot_a', 'vendor_boot_a', 'vbmeta_a')
 STATE = Path('/run/lapis-install')
+# --in-ram: the backup lives only in this live session's tmpfs and is gone at power-off.
+RAM_BACKUP = STATE / 'ram-backup'
 TARGET = Path('/mnt')
 
 
@@ -89,13 +91,27 @@ def external(path, device):
     require(os.stat(path).st_dev != os.stat('/').st_dev, 'Backup must not be in the live overlay')
 
 
+def in_tmpfs(path):
+    return output(['findmnt', '-no', 'FSTYPE', '--target', path]) == 'tmpfs'
+
+
 def backup(args):
     p, device, gpt = current()
-    dest = args.destination.resolve()
-    external(dest.parent, device)
+    require(bool(args.destination) != args.in_ram, 'Give either --destination or --in-ram')
+    if args.in_ram:
+        dest = RAM_BACKUP
+        require(in_tmpfs(STATE), f'{STATE} is not tmpfs; --in-ram needs the live session RAM disk')
+        print('RAM-only backup: it lets a failed commit restore the original boot regions during this session,\n'
+              'and is lost at power-off. Nothing will remain to undo the installation afterwards.')
+    else:
+        dest = args.destination.resolve()
+        external(dest.parent, device)
     require(not dest.exists(), 'Choose a new backup directory')
+    # RAM mode also needs room for the Fedora bootstrap and the boot set built later in the same tmpfs.
     required_bytes = sum(x['size'] for x in p['partitions'] if x['name'] not in ('userdata', 'super')) + 512 * 1024**2
-    require(shutil.disk_usage(dest.parent).free > required_bytes, 'Insufficient external backup space')
+    required_bytes += 1024**3 if args.in_ram else 0
+    require(shutil.disk_usage(dest.parent).free > required_bytes,
+            'Insufficient backup space' + (f' (try: mount -o remount,size=8G /run)' if args.in_ram else ''))
     dest.mkdir(mode=0o700)
     records = []
     with device.open('rb') as f:
@@ -118,7 +134,7 @@ def backup(args):
     save_json(dest / 'manifest.json', dict(records=records, disk_guid=gpt.guid))
     os.sync()
     verify_backup(dest)
-    save_json(STATE / 'backup.json', dict(path=str(dest), manifest_sha256=sha256(dest / 'manifest.json')))
+    save_json(STATE / 'backup.json', dict(path=str(dest), manifest_sha256=sha256(dest / 'manifest.json'), in_ram=args.in_ram))
     print('Backup written and read back. It contains private device material; keep it offline. It does not contain your files or a complete factory OS.')
 
 
@@ -135,7 +151,10 @@ def verify_backup(dest):
 def checked_backup(device):
     record = read_json(STATE / 'backup.json')
     dest = Path(record['path'])
-    external(dest, device)
+    if record.get('in_ram'):
+        require(dest == RAM_BACKUP and in_tmpfs(dest), 'RAM backup record does not point at this session tmpfs')
+    else:
+        external(dest, device)
     require(sha256(dest / 'manifest.json') == record['manifest_sha256'], 'Backup manifest changed')
     verify_backup(dest)
     require(read_json(dest / 'plan.json') == read_json(STATE / 'plan.json'), 'Backup belongs to a different plan')
@@ -323,7 +342,8 @@ def commit(args):
         os.close(fd)
     saved = TARGET / 'var/lib/asus-boot/installation'
     shutil.copytree(STATE, saved, ignore=shutil.ignore_patterns('*.sparse.img'), dirs_exist_ok=False)
-    shutil.copytree(STATE, backup / 'installed-state', ignore=shutil.ignore_patterns('*.sparse.img'), dirs_exist_ok=False)
+    if backup != RAM_BACKUP:  # a RAM backup sits inside STATE; the copy on encrypted root above already has it
+        shutil.copytree(STATE, backup / 'installed-state', ignore=shutil.ignore_patterns('*.sparse.img'), dirs_exist_ok=False)
     os.sync()
     print('Boot committed and state archived. Follow the shutdown and first-boot checklist.')
 
@@ -333,7 +353,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     subs = parser.add_subparsers(dest='command', required=True)
     q = subs.add_parser('plan'); q.add_argument('--device', required=True, type=Path); q.set_defaults(fn=plan)
-    q = subs.add_parser('backup'); q.add_argument('--destination', required=True, type=Path); q.set_defaults(fn=backup)
+    q = subs.add_parser('backup'); q.add_argument('--destination', type=Path)
+    q.add_argument('--in-ram', action='store_true', help='keep the backup only in this session (lost at power-off)')
+    q.set_defaults(fn=backup)
     q = subs.add_parser('verify-backup'); q.add_argument('destination', type=Path); q.set_defaults(fn=lambda a: verify_backup(a.destination))
     for name, fn in [('format', format_root), ('commit', commit)]:
         q = subs.add_parser(name); q.add_argument('--apply', action='store_true'); q.set_defaults(fn=fn)
