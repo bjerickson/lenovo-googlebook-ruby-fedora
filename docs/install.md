@@ -70,10 +70,29 @@ Connect AC and the USB stick, start the laptop and choose **Boot from external d
 ```sh
 iwctl                                   # station wlan0 connect YOUR_SSID, then exit
 cd /opt/ruby-fedora
-python3 tools/install_fedora_ruby.py --user YOU --name 'Your Name' --timezone America/Chicago
+python3 tools/install_fedora_ruby.py --user YOU --name 'Your Name' --timezone America/Chicago --desktop kde
 ```
 
-Options: `--desktop kde` (tested), `--desktop gnome` or `--desktop none` (text login; the default); `--keymap`, `--hostname`.
+Options: `--desktop` (below), `--keymap` (console keymap, default `us`), `--hostname` (default `googlebook`).
+
+### Choosing a desktop
+
+| `--desktop` | Installs | Boots to |
+| --- | --- | --- |
+| `kde` | Fedora's `@kde-desktop-environment` group: KDE Plasma with SDDM | Plasma login. **Tested on Ruby** |
+| `gnome` | `@workstation-product-environment`: Fedora Workstation's GNOME with GDM | GNOME login. Not yet tested on Ruby |
+| `none` (default) | no desktop | text login on the console |
+
+Either desktop works with the hardware setup, which is not desktop-specific (graphics, audio, sensors, fingerprint, kernel updates). Two optional extras are tied to Plasma: automatic brightness uses Plasma's brightness API, and the glowbar follows Plasma's accent colour (on other desktops it uses a fixed blue).
+
+To add or change a desktop later:
+
+```sh
+sudo dnf install @kde-desktop-environment            # or: sudo dnf install @workstation-product-environment
+sudo systemctl set-default graphical.target
+sudo reboot
+```
+
 
 - `--dry-run` shows the current partitions, the layout after installation, whether the Fedora image is on the USB and whether the network works, then stops without writing anything.
 - `--backup DIR` first saves, to a mounted external drive (not the installer USB, not RAM), the raw partition table, every factory partition except `userdata` and `super` (about 0.8 GB), and the speaker calibration, and verifies them before anything is erased; the LUKS header is added after formatting. It is off by default: Google's recovery USB restores Googlebook OS completely, and the firmware can always be downloaded again. The backup contains private material (the LUKS header can unlock the disk with a password valid when it was taken); keep it offline.

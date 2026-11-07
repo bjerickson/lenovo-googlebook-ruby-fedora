@@ -462,7 +462,8 @@ def main():
     p.add_argument('--user', required=True); p.add_argument('--name', required=True)
     p.add_argument('--timezone', required=True); p.add_argument('--keymap', default='us')
     p.add_argument('--hostname', default='googlebook')
-    p.add_argument('--desktop', choices=sorted(DESKTOPS), default='none')
+    p.add_argument('--desktop', choices=sorted(DESKTOPS), default='none',
+                   help='kde: KDE Plasma (tested); gnome: Fedora Workstation GNOME; none: text login (default)')
     p.add_argument('--dry-run', action='store_true', help='show the plan and stop; writes nothing')
     p.add_argument('--backup', type=Path, metavar='DIR',
                    help='save the factory boot partitions, partition table, calibration and LUKS header to DIR '

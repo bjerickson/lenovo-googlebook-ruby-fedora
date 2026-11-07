@@ -15,7 +15,7 @@ This is a fork of **[lenovo-googlebook-ruby-cachyos](https://github.com/nbarrios
 | Area | Status on Fedora |
 | --- | --- |
 | Install and boot | LUKS2 + Btrfs on the internal NVMe; disk password prompt visible at boot |
-| Desktop | KDE Plasma (the installer can also set up GNOME or no desktop; only KDE has been tested) |
+| Desktop | KDE Plasma (`--desktop kde`); GNOME (`--desktop gnome`) or a text login are also available, only KDE has been tested. See [choosing a desktop](docs/install.md#choosing-a-desktop) |
 | Wi-Fi | Intel CNVi |
 | Speakers | SOF + 4× TAS2563 with Lenovo's tuning, Dolby DAX and factory per-speaker calibration |
 | Ambient light sensor | `cros-ec-light`; optional automatic screen brightness for Plasma |

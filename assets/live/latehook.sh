@@ -22,7 +22,8 @@ EOF
 printf '\nFedora installer for the Lenovo Googlebook 15 (Ruby). The internal disk is untouched.\n'
 printf 'Connect Wi-Fi with iwctl, then:\n'
 printf '  cd /opt/ruby-fedora\n'
-printf '  python3 tools/install_fedora_ruby.py --user YOU --name "Your Name" --timezone Area/City\n'
+printf '  python3 tools/install_fedora_ruby.py --user YOU --name "Your Name" --timezone Area/City --desktop kde\n'
+printf '  (--desktop kde, gnome or none; --dry-run to preview; --help for all options)\n'
 printf 'Guide: docs/install.md\n\n'
 EOF
     chmod 755 /new_root/root/.automated_script.sh
