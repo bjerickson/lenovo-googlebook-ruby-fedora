@@ -7,34 +7,18 @@ import stat
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-KERNEL_RELEASE = '7.2.4-arch1-Watanare-T2-3-t2'
+# Live USB base: the exact Omarchy 4.0.4 ISO (Arch, console only) and its kernel.
 ISO_SHA256 = 'ddeded2758c48318d201dfdac905ecb28f570441883f0c052ea3cd5d05acf92d'
 KERNEL_SHA256 = 'df69967d55b74263fcd78bbfc0e0e6c86d0e27b9cebb873f6f86b5d072602bb6'
-KERNEL_PACKAGES = {
-    'linux-t2-7.2.4.arch1-3-x86_64.pkg.tar.zst': 'cc5a5ff74f5c04ea1bb79b6e58400a3b3eb69d1cda9093226921d4a2ebb1b17d',
-    'linux-t2-headers-7.2.4.arch1-3-x86_64.pkg.tar.zst': '9892cea1ee6ba091ec7f9e053bb5fb1cc42f94c359ab2a4ab158ddc1d2001eae',
-}
 XE_PARAMETERS = {
     'gsc_firmware_path': '', 'enable_panel_replay': '0', 'enable_psr': '0',
     'enable_fbc': '0', 'enable_dsb': '0', 'enable_sagv': '0', 'enable_dc': '0',
 }
-# Physically surveyed fatcat boards. Ruby (Lenovo Googlebook 15) has a GPT
-# byte-identical to the Lapis 512 GB profile; one plain Xe load drives its panel.
+# The physically tested board: Lenovo Googlebook 15 (DMI Google / Ruby, fatcat family).
+# assets/ruby-512gb.json is its factory 512 GB partition layout.
 BOARDS = {
-    'Lapis': dict(gpu='0xb090', audio_subsystem='0x15e4', profile='lapis-512gb.json', xe_reload=True,
-                  mapper='omarchy_root', label='Omarchy'),
-    'Ruby': dict(gpu='0xb090', audio_subsystem='0x0000', profile='lapis-512gb.json', xe_reload=False,
-                 mapper='fedora-root', label='Fedora', pkg_cache='var/cache/libdnf5'),
+    'Ruby': dict(gpu='0xb090', audio_subsystem='0x0000', profile='ruby-512gb.json'),
 }
-# Root mappers the installed-system tools accept (Fedora fork first; CachyOS and
-# pre-rename Omarchy names kept so upstream tools still recognise their installs).
-ROOT_MAPPERS = ('fedora-root', 'cachyos-root', 'omarchy_root')
-# CachyOS target (Ruby). The kernel is pinned by the installed system; its hash
-# is recorded at install time rather than shipped, because CachyOS repos only
-# carry the current build.
-CACHYOS_KEY = '882DCFE48E2051D48E2562ABF3B607488DB35A47'
-CACHYOS_KERNEL = '/boot/vmlinuz-linux-cachyos'
-CACHYOS_INITRAMFS = '/boot/initramfs-linux-cachyos-android.img'
 # Fedora target (Ruby). Bootstrapped from Fedora's signed OCI container image,
 # then completed by the target's own dnf5. The image hash is pinned and the
 # CHECKSUM file's signature is checked against Fedora 45's primary key, whose
@@ -97,6 +81,16 @@ def save_json(path, value, mode=0o600):
         f.flush()
         os.fsync(f.fileno())
     os.replace(tmp, path)
+
+
+def write_all(fd, offset, data):
+    """pwrite until done, then fsync; a zero-length write is an error, never a silent stop."""
+    view = memoryview(data)
+    while view:
+        n = os.pwrite(fd, view, offset)
+        require(n > 0, 'Short disk write')
+        view, offset = view[n:], offset + n
+    os.fsync(fd)
 
 
 def new_regular_output(path):

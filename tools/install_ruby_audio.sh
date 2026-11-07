@@ -9,7 +9,7 @@ assets=$here/../assets/installed
 [ "$(id -u)" = 0 ] || { echo 'Run as root' >&2; exit 1; }
 [ "$(cat /sys/class/dmi/id/product_name)" = Ruby ] || { echo 'Not a Ruby board' >&2; exit 1; }
 for tool in lpunpack fsck.erofs; do
-    command -v $tool >/dev/null || { echo "Missing $tool: install android-tools and erofs-utils (dnf or pacman)" >&2; exit 1; }
+    command -v $tool >/dev/null || { echo "Missing $tool: dnf install android-tools erofs-utils" >&2; exit 1; }
 done
 
 # VENDOR_DIR: an already-extracted vendor_a tree (e.g. from Google's recovery image via

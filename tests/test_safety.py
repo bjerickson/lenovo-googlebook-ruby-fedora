@@ -1,4 +1,3 @@
-import argparse
 import io
 import json
 import os
@@ -11,7 +10,6 @@ import uuid
 from lapis.common import new_regular_output, require, sha256
 from lapis.cpio import archive, find_member, members
 from lapis.gpt import ENTRY, tables, read_gpt
-from tools import native
 from tools.write_usb import resized_tables, write_full
 
 
@@ -48,20 +46,6 @@ class SafetyTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 read_gpt(io.BytesIO(data), len(data))
 
-    def test_gpt_renames_only_two_labels(self):
-        data = disk_fixture(); gpt = read_gpt(io.BytesIO(data), len(data))
-        primary, secondary = gpt.rename_vm_partitions()
-        data[:len(primary)] = primary; data[-len(secondary):] = secondary
-        changed = read_gpt(io.BytesIO(data), len(data))
-        self.assertEqual(gpt.primary[:512], changed.primary[:512])
-        for old, new in zip(gpt.partitions(), changed.partitions()):
-            expected = dict(old)
-            if old['name'].startswith('pvmfw_'):
-                expected['name'] = 'factory_' + old['name']
-            self.assertEqual(expected, new)
-        with self.assertRaises(RuntimeError):
-            changed.rename_vm_partitions()
-
     def test_resize_keeps_partition_geometry(self):
         data = disk_fixture(); gpt = read_gpt(io.BytesIO(data), len(data))
         larger = len(data) * 2
@@ -88,85 +72,12 @@ class SafetyTests(unittest.TestCase):
         with self.assertRaises(RuntimeError): archive({'../secret': (0o100644, b'bad')})
         with self.assertRaises(RuntimeError): members(first[:120])
 
-    def test_profile_rejects_unrecognized_disk(self):
-        data = disk_fixture()
-        with self.assertRaises(RuntimeError): native.validate_profile(read_gpt(io.BytesIO(data), len(data)), 'lapis-512gb.json')
-
     def test_short_writes_are_completed(self):
         class ShortWriter(io.BytesIO):
             def write(self, data): return super().write(data[:3])
         out = ShortWriter(); write_full(out, b'abcdefghij')
         self.assertEqual(out.getvalue(), b'abcdefghij')
 
-    def test_partial_failed_commit_restores_all_attempted_regions(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            folder = Path(tmp); state = folder / 'state'; state.mkdir(); (state/'candidate').mkdir()
-            manifest = state/'candidate/manifest.json'; manifest.write_text('{}')
-            device = folder/'disk'; original = bytes(range(256)) * 8; device.write_bytes(original)
-            regions = [(0,b'A'*512,original[:512]), (512,b'B'*512,original[512:1024])]
-            (state/'validated.json').write_text(json.dumps(dict(manifest_sha256=sha256(manifest), regions=[dict(offset=o,sha256=native.digest(n)) for o,n,_ in regions])))
-            write = native.write_all
-            count = 0
-            def fail_second(fd, offset, data):
-                nonlocal count
-                count += 1
-                if count == 2:
-                    os.pwrite(fd, data[:100], offset)
-                    raise OSError('injected partial write failure')
-                return write(fd, offset, data)
-            with mock.patch.object(native,'STATE',state), mock.patch.object(native,'current',return_value=({},device,None)), \
-                 mock.patch.object(native,'mounted'), mock.patch.object(native,'checked_backup',return_value=folder), \
-                 mock.patch.object(native,'candidate_regions',return_value=regions), mock.patch.object(native,'typed'), \
-                 mock.patch.object(native,'write_all',side_effect=fail_second):
-                with self.assertRaises(OSError): native.commit(argparse.Namespace(apply=True))
-            self.assertEqual(device.read_bytes(),original)
-            results=json.loads((state/'rollback.json').read_text())
-            self.assertEqual(len(results),2)
-            self.assertTrue(all(x['restored'] for x in results))
-
-
-    def _ram_backup(self, state):
-        dest = state / 'ram-backup'; dest.mkdir()
-        (state / 'plan.json').write_text('{"x": 1}'); (dest / 'plan.json').write_text('{"x": 1}')
-        (dest / 'manifest.json').write_text(json.dumps(dict(records=[], disk_guid='g')))
-        (state / 'backup.json').write_text(json.dumps(dict(path=str(dest), manifest_sha256=sha256(dest / 'manifest.json'), in_ram=True)))
-        return dest
-
-    def test_ram_backup_skips_external_check_only_in_session_tmpfs(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            state = Path(tmp); dest = self._ram_backup(state)
-            with mock.patch.object(native, 'STATE', state), mock.patch.object(native, 'RAM_BACKUP', dest), \
-                 mock.patch.object(native, 'external', side_effect=AssertionError('external check must be skipped')):
-                with mock.patch.object(native, 'in_tmpfs', return_value=True):
-                    self.assertEqual(native.checked_backup(Path('/dev/nvme0n1')), dest)
-                with mock.patch.object(native, 'in_tmpfs', return_value=False):
-                    with self.assertRaises(RuntimeError): native.checked_backup(Path('/dev/nvme0n1'))
-            # A record claiming in_ram but pointing elsewhere is refused.
-            rec = json.loads((state / 'backup.json').read_text()); rec['path'] = str(state)
-            (state / 'backup.json').write_text(json.dumps(rec))
-            with mock.patch.object(native, 'STATE', state), mock.patch.object(native, 'RAM_BACKUP', dest), \
-                 mock.patch.object(native, 'in_tmpfs', return_value=True):
-                with self.assertRaises(RuntimeError): native.checked_backup(Path('/dev/nvme0n1'))
-
-    def test_commit_with_ram_backup_archives_only_to_target(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            folder = Path(tmp); state = folder / 'state'; state.mkdir(); (state / 'candidate').mkdir()
-            target = folder / 'mnt'; target.mkdir()
-            dest = state / 'ram-backup'; dest.mkdir()
-            manifest = state / 'candidate/manifest.json'; manifest.write_text('{}')
-            device = folder / 'disk'; original = bytes(1024); device.write_bytes(original)
-            regions = [(0, b'A' * 512, original[:512])]
-            (state / 'validated.json').write_text(json.dumps(dict(manifest_sha256=sha256(manifest),
-                                                   regions=[dict(offset=o, sha256=native.digest(n)) for o, n, _ in regions])))
-            with mock.patch.object(native, 'STATE', state), mock.patch.object(native, 'TARGET', target), \
-                 mock.patch.object(native, 'RAM_BACKUP', dest), \
-                 mock.patch.object(native, 'current', return_value=(dict(disk_guid='g'), device, None)), \
-                 mock.patch.object(native, 'mounted'), mock.patch.object(native, 'checked_backup', return_value=dest), \
-                 mock.patch.object(native, 'candidate_regions', return_value=regions), mock.patch.object(native, 'typed'):
-                native.commit(argparse.Namespace(apply=True))
-            self.assertEqual(device.read_bytes()[:512], b'A' * 512)
-            self.assertTrue((target / 'var/lib/asus-boot/installation/ram-backup').is_dir())
-            self.assertFalse((dest / 'installed-state').exists())
 
 if __name__ == '__main__':
     unittest.main()

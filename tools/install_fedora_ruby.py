@@ -30,19 +30,17 @@ import zlib
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lapis.boot import build_set
 from lapis.common import (ROOT, FEDORA_CHECKSUM_URL, FEDORA_KERNEL, FEDORA_INITRAMFS, board, output, read_json, require,
-                          run, save_json, sha256)
+                          run, save_json, sha256, write_all)
 from lapis.gpt import ENTRY, read_gpt, tables
-from tools.configure_target import put, mask, chroot
-from tools.configure_fedora import (PACKAGES, DESKTOPS, XE_OPTIONS, CALIBRATION, verified_image, unpack_rootfs, dnf,
-                                    kernel_release, check_initramfs)
-from tools.native import write_all
+from tools.fedora import (PACKAGES, DESKTOPS, XE_OPTIONS, CALIBRATION, put, mask, chroot, verified_image, unpack_rootfs,
+                          dnf, kernel_release, check_initramfs)
 
 TARGET = Path('/mnt')
 MAPPER = 'fedora-root'
 KIT = '/opt/lapis-kit'
 LINUX = '0fc63daf-8483-4772-8e79-3d69d8477de4'
 VBMETA = '88434509-d9d1-487d-b82c-15ef964cbd4b'
-# Factory positions (assets/lapis-512gb.json); the firmware finds these by name.
+# Factory positions (assets/ruby-512gb.json); the firmware finds these by name.
 KEEP = ('super', 'boot_a', 'boot_b', 'vbmeta_a', 'vbmeta_b', 'init_boot_a', 'init_boot_b',
         'vendor_boot_a', 'vendor_boot_b', 'misc')
 SLOT_A = ('boot_a', 'init_boot_a', 'vendor_boot_a', 'vbmeta_a')
@@ -51,7 +49,7 @@ COREBOOT_DKMS = 'ruby-coreboot-7.3.3'
 
 def new_gpt(disk_bytes):
     """Fedora root at the old userdata start, running to the end of the disk."""
-    profile = read_json(ROOT / 'assets/lapis-512gb.json')
+    profile = read_json(ROOT / 'assets/ruby-512gb.json')
     require(disk_bytes == profile['disk_bytes'], f'Expected the 512 GB Ruby disk, found {disk_bytes} bytes')
     sectors = disk_bytes // 512
     first, last = 34, sectors - 34

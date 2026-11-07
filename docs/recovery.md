@@ -1,39 +1,28 @@
-# Recovery and failed stages
+# Recovery
 
-## Prepare before unlocking
+## The firmware is never modified
 
-Use Google's [Device Recovery Utility](https://chromewebstore.google.com/detail/device-recovery-utility/pocpnlppkickgojjlmhdmidojbmbodfm) and [Googlebook recovery instructions](https://support.google.com/googlebook/answer/17452429). Select the Googlebook device family and **ASUS Googlebook 14**; do not select an ExpertBook or a different Googlebook manufacturer. Keep that USB separate from the Linux live USB and your personal backups.
+Nothing in this project writes the firmware. Whatever happens to the internal disk, the developer screen still offers **Boot from external drive**, so the installer USB is always a way back in.
 
-The original development created official Lapis recovery media and independently read back the written bytes. A factory restore was not tested on the installed laptop. Having a checksum-verified recovery drive is preparation, not proof of a successful future restore.
+## The installer stopped with an error
 
-## A command failed before reboot
+The boot partitions are written last, only after Fedora is installed and the boot set has passed the Android loader check. Fix the cause shown and run `install_fedora_ruby.py` again from the top. It rewrites the partition table and reformats, so it does not matter how far the previous run got.
 
-Stop at the first error and preserve `/run/lapis-install` on your private external storage. Keep the successful live session running. Read the precise error and any `rollback.json`; do not remove stage markers or repeat `format --apply` to fix an unrelated package failure.
+## Fedora does not boot after a kernel update
 
-- Before formatting: the original internal disk is unchanged by plan/backup stages.
-- After formatting but before boot commit: userdata is already replaced; factory OS is no longer intact, even though its boot partitions are unchanged.
-- After a failed commit: check each rollback record. The script attempts to restore all attempted boot regions, including a partially written one. This does not restore erased userdata. A power loss cannot be handled by exception rollback.
-- After a successful commit: private state is on encrypted root and the backup drive. The tool refuses another fresh commit against the modified GPT.
-
-Package or configuration recovery is a manual expert operation in this initial release. Use the saved markers, package logs and mounted target to identify the last completed step. Do not run the entire installer again. If you are unsure, save private evidence and use factory recovery to start over.
-
-## Installed Linux will not boot
-
-Choose external boot with the known-working live USB. Do not select bootloader relock or reset as an experiment. Identify internal userdata by its current label/UUID and verify the disk before opening it:
+Boot the installer USB and roll slot A back to the previous kernel:
 
 ```sh
-lsblk -o PATH,SIZE,TYPE,FSTYPE,LABEL,UUID,MOUNTPOINTS
-# Replace the placeholder with the verified userdata partition.
-cryptsetup open /dev/VERIFIED_USERDATA omarchy_root
-mount -o subvol=@ /dev/mapper/omarchy_root /mnt
+cryptsetup open /dev/nvme0n1p1 fedora-root
+mount -o subvol=@ /dev/mapper/fedora-root /mnt
+arch-chroot /mnt python3 /opt/lapis-kit/tools/kernel_update_fedora.py rollback
+umount /mnt; cryptsetup close fedora-root
 ```
 
-For inspection, the installed logs are under `/mnt/var/log`, saved boot state under `/mnt/var/lib/asus-boot/installation`, and configuration under `/mnt/etc/asus-boot`. Mount the other subvolumes before a chroot that needs them. Never paste the contents of the AVB private key, LUKS header, saved network profiles or device-partition backups into an issue.
+## Getting into the installed system from the USB
 
-Restoring an original GPT or boot image requires verifying the backup's disk identity, exact offset, length and hash against the intended drive. This release does not expose a generic `dd` rollback command: it would be too easy to write a backup from another laptop. Use the recorded `plan.json` and a reviewed region-by-region restore, or use Google's complete factory recovery flow. Restoring boot/GPT bytes alone cannot undo a LUKS reformat.
+The same `cryptsetup open` and `mount` give you the root at `/mnt`; add `mount -o subvol=@home /dev/mapper/fedora-root /mnt/home` for home. `arch-chroot /mnt` runs commands inside it (dnf works there with network).
 
-## Returning to Googlebook OS
+## Going back to Googlebook OS
 
-Copy any Linux files you need off the encrypted drive, then follow Google's current full recovery procedure using the dedicated ASUS media. Recovery erases local data. Complete a working factory boot before following any official relock instructions. Keep original device backups until recovery is confirmed.
-
-No part of this project writes firmware flash, changes firmware write protection, or installs an ExpertBook BIOS.
+Use Google's [Device Recovery Utility](https://chromewebstore.google.com/detail/device-recovery-utility/pocpnlppkickgojjlmhdmidojbmbodfm) and the [Googlebook recovery instructions](https://support.google.com/googlebook/answer/17452429) from any computer with Chrome, with a separate USB drive of 32 GB or more. Select **Googlebook**, manufacturer **Lenovo**, product **Lenovo Googlebook 15**. The recovery image restores the whole disk, including the partitions this installer removed. Relock the bootloader afterwards if you want verified boot back. A factory restore has not been tested on a Fedora-installed laptop.

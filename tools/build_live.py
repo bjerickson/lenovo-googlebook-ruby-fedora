@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Build a credential-free live image from the exact Omarchy 4.0.4 ISO."""
+"""Build the credential-free Fedora installer USB image from the exact Omarchy 4.0.4 ISO.
+
+The ISO only supplies a pinned, tested Arch live kernel and userland that boot on Ruby's
+firmware; the image is console only and carries this repository at /opt/ruby-fedora.
+"""
 import argparse
 import os
 from pathlib import Path
@@ -61,8 +65,6 @@ def main():
     p.add_argument('--iso', required=True, type=Path)
     p.add_argument('--output', required=True, type=Path)
     p.add_argument('--vendor', type=Path, default=ROOT / 'vendor')
-    p.add_argument('--console-only', action='store_true',
-                   help='Skip the Xe reload and live desktop; keep the firmware framebuffer console')
     args = p.parse_args()
     iso = args.iso.resolve()
     require(iso.is_file(), 'Missing ISO')
@@ -81,7 +83,6 @@ def main():
                'modprobe.blacklist=xe initramfs_async=0 console=tty0 loglevel=4 '
                'log_buf_len=4M printk.time=1 panic=30 fbcon=nodefer disablehooks=plymouth '
                'plymouth.enable=0 rd.plymouth=0 cow_spacesize=3G ' +
-               ('' if args.console_only else 'asus.live_desktop=1 ') +
                ' '.join('xe.' + k + '=' + v for k, v in XE_PARAMETERS.items()))
     initrd = (work / 'initramfs-linux-t2.img').read_bytes()
     config = find_member(initrd, 'config', lambda data: subprocess.check_output(['zstd', '-d', '-c'], input=data)).decode()

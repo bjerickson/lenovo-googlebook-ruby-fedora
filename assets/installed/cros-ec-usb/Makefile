@@ -7,7 +7,7 @@ obj-m := cros_ec_usb.o
 else
 KVER ?= $(shell uname -r)
 KDIR ?= /usr/lib/modules/$(KVER)/build
-# linux-cachyos is built with clang/lld; the module must use the same toolchain.
+# A clang-built kernel needs LLVM=1 for its modules; Fedora's gcc-built kernel does not.
 LLVM_ARG := $(if $(shell grep -s '^CONFIG_CC_IS_CLANG=y' $(KDIR)/.config),LLVM=1)
 
 modules:

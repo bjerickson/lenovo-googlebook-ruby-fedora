@@ -23,10 +23,10 @@ newlog() { dmesg | tail -n +"$((mark + 1))" | tee -a "$log"; mark=$(dmesg | wc -
 
 say "$(date -Is) kernel $(uname -r)"
 step cat /sys/bus/usb/devices/3-7/product /sys/bus/usb/devices/3-7:1.0/modalias
-[ -x "$ectool" ] || stop "ectool not found at $ectool (build it per docs/cachyos-ruby.md, Fingerprint)"
+[ -x "$ectool" ] || stop "ectool not found at $ectool (build it per docs/hardware.md, Fingerprint)"
 
 say 'Install dkms and the driver (autoload blocked)'
-pacman -S --needed --noconfirm dkms 2>&1 | tee -a "$log"
+dnf install -y dkms "kernel-devel-$(uname -r)" 2>&1 | tee -a "$log"
 "$here/install_fingerprint_driver.sh" 2>&1 | tee -a "$log"
 modinfo -F filename cros_ec_usb >/dev/null 2>&1 || stop 'cros_ec_usb did not build or install'
 

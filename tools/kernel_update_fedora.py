@@ -22,9 +22,8 @@ import subprocess
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lapis.boot import build_set
-from lapis.common import ROOT, FEDORA_KERNEL, FEDORA_INITRAMFS, output, read_json, require, run, save_json, sha256
+from lapis.common import ROOT, FEDORA_KERNEL, FEDORA_INITRAMFS, output, read_json, require, run, save_json, sha256, write_all
 from lapis.gpt import read_gpt
-from tools.native import write_all
 
 SLOT_A = ('boot_a', 'init_boot_a', 'vendor_boot_a', 'vbmeta_a')
 STATE = Path('/var/lib/asus-boot/kernel-update')

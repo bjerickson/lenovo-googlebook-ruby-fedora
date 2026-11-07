@@ -1,7 +1,7 @@
 #!/bin/sh
 # Read-only hardware survey for porting to another fatcat board (e.g. Lenovo "Ruby").
 # Writes only to the RAM overlay; never opens the internal disk for writing.
-# Usage (root, live USB): sh /opt/asus-googlebook-omarchy/assets/live/recon.sh [/dev/nvme0n1]
+# Usage (root, live USB): sh /opt/ruby-fedora/assets/live/recon.sh [/dev/nvme0n1]
 set -u
 disk=${1:-/dev/nvme0n1}
 out=/root/recon-$(cat /sys/class/dmi/id/product_name 2>/dev/null || echo unknown)
@@ -60,7 +60,6 @@ cp /sys/firmware/acpi/tables/NHLT* acpi/ 2>/dev/null
 save dmesg.txt dmesg
 save journal-boot.txt journalctl -b --no-pager
 save failed-units.txt systemctl --failed --no-pager
-save live-prepare.txt journalctl -b -u lapis-live-prepare.service --no-pager
 
 cd /root && tar czf "$out.tar.gz" "$(basename "$out")"
 echo "Saved $out.tar.gz"

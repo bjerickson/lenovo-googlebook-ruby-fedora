@@ -1,9 +1,9 @@
 #!/bin/sh
 # Build and install the ChromeOS EC USB driver (cros_ec_usb) for the Ruby
-# fingerprint MCU with DKMS, so pacman's DKMS hook rebuilds it for every new
-# linux-cachyos. Run as root on the Googlebook. The module is not loaded here,
-# and autoloading stays blocked until --autoload; the first load is a manual
-# test (docs/cachyos-ruby.md, Fingerprint).
+# fingerprint MCU with DKMS, so it is rebuilt for every new kernel. Run as root
+# on the Googlebook; tools/install_fingerprint_fedora.sh calls it with --autoload.
+# Without --autoload the module is blacklisted until loaded by hand (a first,
+# manual test; docs/hardware.md, Fingerprint).
 set -eu
 here=$(dirname "$(readlink -f "$0")")
 assets=$here/../assets/installed
@@ -17,11 +17,10 @@ case "${1-}" in
 esac
 [ "$(id -u)" = 0 ] || { echo 'Run as root' >&2; exit 1; }
 [ "$(cat /sys/class/dmi/id/product_name)" = Ruby ] || { echo 'Not a Ruby board' >&2; exit 1; }
-command -v dkms >/dev/null || { echo 'Missing dkms: install dkms and the kernel headers (dnf: dkms kernel-devel; pacman: dkms linux-cachyos-headers)' >&2; exit 1; }
+command -v dkms >/dev/null || { echo 'Missing dkms: dnf install dkms kernel-devel' >&2; exit 1; }
 running=$(uname -r)
 [ -d "/usr/lib/modules/$running/build/include" ] || {
-    echo "No headers for the running kernel $running (dnf: kernel-devel-$running; pacman: linux-cachyos-headers)" >&2
-    echo '(after a staged kernel update, commit it and reboot into the new kernel first)' >&2
+    echo "No headers for the running kernel $running: dnf install kernel-devel-$running" >&2
     exit 1
 }
 ver=$(sed -n 's/^PACKAGE_VERSION="\(.*\)"$/\1/p' "$src/dkms.conf")
@@ -47,7 +46,7 @@ else
 fi
 
 dkms add "$name/$ver"
-# Every installed kernel that has headers, including a staged, not yet committed one.
+# Every installed kernel that has headers.
 for build in /usr/lib/modules/*/build/include; do
     kver=${build#/usr/lib/modules/}; kver=${kver%/build/include}
     [ -d "/usr/lib/modules/$kver/kernel" ] || continue

@@ -1,29 +1,28 @@
 # Validation record
 
-## Physical evidence: original procedure
+## Physical tests
 
-On 7 October 2026, one 512 GB ASUS CX9406CAA / Google Lapis completed the original staged installation. The full Omarchy desktop booted from the internal encrypted drive with USB removed. The owner confirmed the desktop and audible speaker playback. A subsequent internal boot retained the display, Wi-Fi and audio fixes and had no failed systemd units. A graphics shader/pixel-readback test, Snapper snapshot creation and snapshot cleanup passed.
+One laptop: Lenovo Googlebook 15 (DMI `Google / Ruby`), 512 GB NVMe, firmware `Google_Ruby.16650.143.0`. Fedora 45, kernel `7.2.15-300.fc45`, KDE Plasma. 7 November 2026.
 
-The working live USB also passed a restart and cold-start graphics test. Before internal installation, the Android loader accepted the native candidate, a disposable encrypted-root QEMU fixture reached its init program, and each committed disk region passed read-back. Original logs and disk backups remain private; they are not included here.
+| Area | Result |
+| --- | --- |
+| Installer USB | Boots via **Boot from external drive** |
+| `install_fedora_ruby.py` | Completed; the laptop's own `vendor_a` was inconsistent (unmerged virtual A/B update), so firmware came from Google's recovery image |
+| Boot | Disk password prompt visible (coreboot framebuffer → simpledrm), unlock, KDE Plasma |
+| Wi-Fi | Connected, `dnf` updates |
+| Speakers | Playback works and sounds right; Lenovo tuning, Dolby DAX and calibration were installed but not individually measured |
+| Ambient light sensor | `cros-ec-light` reads lux (about 20 indoors) |
+| Automatic brightness | Dims when the sensor is covered |
+| Glowbar | Manual colour writes; `ruby-glowbar` service on AC and battery, follows the Plasma accent colour |
+| Fingerprint | `fprintd-enroll` and `fprintd-verify` |
+| Kernel-update hook | Installed; `status` consistent. **A real kernel update has not happened yet.** |
 
-A subsequent display test on the BOE NB140B91-M04 panel verified 2880×1800 at 120 Hz in both Hyprland and the kernel's active display state. With AirPlay disconnected, the owner confirmed a steady image between the brief flashes at the beginning and end of an approximately 18-second test. The before/during/after kernel captures contained no new messages. The desktop setting was then saved at 120 Hz, scale 2; configuration checks passed and the owner confirmed steady scrolling and window movement. A 60 Hz configuration backup was retained. The existing Xe/Aquamarine workarounds were unchanged; VRR remained disabled. This was a session test, not a 120 Hz reboot, suspend or AirPlay test.
+Not yet checked on Fedora: suspend and resume, camera, Bluetooth, headphones and microphones, external displays, Thunderbolt docks, 120 Hz, the power-mode and charge-limit options, fingerprint for sudo and the lock screen, SELinux enforcing, a cold boot after a kernel update, GNOME. These worked under CachyOS on the same hardware ([hardware notes](hardware.md)).
 
-## Public repository checks
+## Host-side tests
 
-The generalized source toolkit is tested separately from that original installation:
+These run without the laptop and are not physical results.
 
-- Python safety tests cover corrupted GPT headers/entries, overlapping/out-of-bounds partitions, duplicate labels, minimal label renaming, USB capacity relocation, refusal of device/existing/symlink outputs, CPIO overrides/path rejection, unsupported layouts and short writes.
-- An injected partial boot-write failure checks restoration of **every attempted region**, including the partly written region.
-- The tests pass both normally and under `python3 -O`, confirming safety checks do not depend on assertions.
-- The ChromiumOS loader harness builds from pinned upstream source on macOS, including from the exact filtered source payload embedded in the live image.
-- A complete live image was built from the checksum-pinned ISO. AVB signature/hash verification passed for all boot components, both GPTs validated, and `vb2api_load_kernel() returned 0` on the final disk image.
-- QEMU booted the loader-assembled live ramdisk and read-only USB image through to the live serial login in 39 seconds, with no initramfs unpacking error and no network attached. The hardware-specific desktop service is expected to reject a VM's non-Lapis identity; this validates the boot/archive/live-root path only.
-- Tracked-file checks reject common secret material, private local paths, oversized files and disk/key artifacts. A manual review complements those checks; pattern scans are not a guarantee against every possible secret.
-
-GitHub Actions runs the safety suite and loader build on Linux and macOS. See the Actions tab for actual results of the current commit. The multi-gigabyte ISO and physical boot are not part of CI.
-
-## Not established by these checks
-
-The generalized public installer has **not** completed a second fresh physical installation. The public USB writer has not been used to overwrite the already-working test drive. No generalized-script test authorizes writes to a different board, firmware or capacity. The original laptop was not reinstalled merely to publish this repository.
-
-This release does not claim suspend/resume, camera, microphone capture, external displays, Bluetooth/headphone playback, battery-life tuning, a complete future update path or a tested factory restore. See [support.md](support.md) for the full matrix.
+- `python3 -m unittest discover -s tests` (also with `-O`): GPT, cpio and USB writer guards; the installer's partition table (factory offsets, slot priorities); kernel-update write rollback; glowbar, auto-brightness and speaker-calibration logic.
+- A Fedora 45 tree installed from the same container image and package list, run in an unprivileged user namespace: dracut builds the initramfs at 20.1 MiB with the required contents; DKMS builds all three module packages for `7.2.15-300.fc45`; the installer's tail (loader build, Android loader check, key, SELinux relabel, slot-A write with read-back) against a sparse 512 GB disk image; the kernel-update hook, `update`, `status` and `rollback` against the same image; the libfprint RPM builds and passes its 133 tests; Google's `vendor_a` passes `fsck.erofs` and both firmware installers run from it.
+- The live image passes the Android loader check (`vb2api_load_kernel() returned 0`).

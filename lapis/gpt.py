@@ -1,7 +1,6 @@
 """Read, validate and minimally edit 512-byte-sector GPT tables.
 
-The public installer deliberately accepts only the factory 128-entry layout.
-No disk is opened for writing by this module.
+Only canonical 128-entry tables are accepted. No disk is opened for writing here.
 """
 from dataclasses import dataclass
 import struct
@@ -40,17 +39,6 @@ class GPT:
                                start_lba=start, end_lba=end, size=(end - start + 1) * 512,
                                attributes=attrs))
         return result
-
-    def rename_vm_partitions(self):
-        entries = bytearray(self.entries)
-        found = set()
-        for part in self.partitions():
-            if part['name'] in ('pvmfw_a', 'pvmfw_b'):
-                found.add(part['name'])
-                offset = (part['index'] - 1) * 128 + 56
-                entries[offset:offset + 72] = ('factory_' + part['name']).encode('utf-16-le').ljust(72, b'\0')
-        require(found == {'pvmfw_a', 'pvmfw_b'}, 'Factory pvmfw labels missing; do not rerun an installation')
-        return tables(self.header, entries, self.primary[:512])
 
 
 def encode_header(values):

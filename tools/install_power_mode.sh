@@ -7,7 +7,7 @@ here=$(dirname "$(readlink -f "$0")")
 assets=$here/../assets/installed/power
 [ "$(id -u)" = 0 ] || { echo 'Run with sudo' >&2; exit 1; }
 [ "$(cat /sys/class/dmi/id/product_name)" = Ruby ] || { echo 'Not a Ruby board' >&2; exit 1; }
-command -v powerprofilesctl >/dev/null || { echo 'Missing powerprofilesctl: pacman -S power-profiles-daemon' >&2; exit 1; }
+command -v powerprofilesctl >/dev/null || { echo 'Missing powerprofilesctl: dnf install tuned-ppd' >&2; exit 1; }
 
 install -Dm755 "$assets/ruby-power-mode" /usr/local/libexec/ruby-power-mode
 install -Dm644 "$assets/ruby-power-mode.service" /etc/systemd/system/ruby-power-mode.service

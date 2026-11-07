@@ -1,5 +1,7 @@
 # Fingerprint reader on Ruby (Google FPMCU over USB) — research
 
+> Research log from the upstream CachyOS port (October 2026), kept for its sources and security analysis. The Fedora setup is in [hardware notes](../hardware.md#fingerprint).
+
 Research date: 10 October 2026. Read-only; nothing was installed or loaded on the system.
 Target: Lenovo Googlebook 15 "Ruby" (Fatcat family), CachyOS `linux-cachyos 7.2.9-2`.
 Sensor: USB `18d1:5402` "Google FPMCU", bcdDevice 0404, interface ff/5a/00.

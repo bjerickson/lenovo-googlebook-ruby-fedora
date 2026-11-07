@@ -1,45 +1,68 @@
-# Maintenance and troubleshooting
+# Maintenance
 
-## Daily boot
+## Kernel updates
 
-Keep developer mode enabled. Choose internal boot on the startup screen, then enter the disk password. The tested firmware had internal boot as its default. Upstream Depthcharge normally uses a developer-screen timeout; that automatic timeout was not physically timed on the test unit, so this guide does not promise an unattended duration.
+The firmware boots the kernel in the Android boot partitions (slot A), not `/boot`. The installer adds a kernel-install plugin, `/etc/kernel/install.d/95-ruby-android.install`, so an ordinary `sudo dnf upgrade` that brings a new kernel also:
 
-## Updates
+1. rebuilds the DKMS modules for it (Fedora's `40-dkms` plugin runs first);
+2. builds the small Ruby initramfs with `/etc/ruby-boot/dracut.conf` (29 MiB budget);
+3. signs the four boot images with the device key `/etc/asus-boot/avb-private.pem`;
+4. validates them with ChromiumOS's Android loader;
+5. backs up the current slot A to `/var/lib/asus-boot/kernel-update/slots/` (the last two are kept), writes the new set and reads it back.
 
-The installed kernel and headers are pinned, and a Pacman pre-transaction hook blocks installing/removing/replacing files matching `usr/lib/modules/*/vmlinuz`. This prevents a new kernel's modules from replacing the kernel still inside the Android boot partitions. Do not disable that guard just to complete an update.
+Reboot to use the new kernel. If any step fails, nothing is written, the dnf transaction still succeeds, and the message says how to retry:
 
-Ordinary user-space updates can still contain Omarchy migrations that assume Limine or an EFI system partition. **A full Omarchy update has not been validated.** Review the proposed packages and boot-related migrations before applying them, keep recovery media ready, and make a filesystem snapshot. A read-only dependency preview during original development found no kernel replacement; no updates were applied as part of that check.
-
-The pin is temporary compatibility debt, including missed kernel fixes. A supported kernel upgrade needs all of: compatible modules and firmware, a small rebuilt initramfs, new Android v4 images, correct ramdisk alignment, AVB signing, a loader test, backup/read-back of exact changed regions, and physical restart/cold-boot checks. The fresh-install commands intentionally do not implement a repeatable upgrade path against an already-modified GPT.
-
-Do not run standard Limine installation, Omarchy factory reset, or boot-menu snapshot restore. This firmware uses Android images. Snapper filesystem snapshots work; restoring one is a manual live-USB recovery operation. A root snapshot does not roll back the separate Android boot partitions or the independently mounted home/log/package-cache subvolumes.
-
-## Black display
-
-From a text console, inspect `journalctl -b -u asus-gpu-prepare.service` (installed) or `journalctl -b -u lapis-live-prepare.service` (live). The service deliberately refuses forced driver removal or unloading while a client holds DRM nodes. It soft-blacklists Xe and SOF audio, loads Xe, releases framebuffer references, unloads it normally, reloads once, then permits audio binding and the display manager.
-
-Do not run the reload routine inside an active desktop. A failed prerequisite should be investigated from the live USB, not bypassed. Kernel/firmware updates may eventually replace this workaround, but they require new hardware tests.
-
-## Refresh rate
-
-The installer defaults to 2880×1800 at 60 Hz, scale 2. The tested BOE NB140B91-M04 panel also ran steadily at 120 Hz with AirPlay disconnected. A brief blank or flash at the moment of switching occurred in the observed test; the image stayed steady between changes. Repeated flashing while the mode stays unchanged was not reproduced in that test.
-
-To use the tested 120 Hz setting, first back up `~/.config/hypr/monitors.lua`, then change only the internal panel rule to:
-
-```lua
-hl.monitor({ output = "eDP-1", mode = "2880x1800@120", position = "0x0", scale = 2 })
+```sh
+sudo python3 /opt/lapis-kit/tools/kernel_update_fedora.py status    # running, slot A, newest installed
+sudo python3 /opt/lapis-kit/tools/kernel_update_fedora.py update    # build and write the newest kernel now
 ```
 
-Keep the other monitor rules and environment settings. Check `hyprctl monitors` and `hyprctl configerrors` after reloading. Change `@120` back to `@60` in that rule to restore the installer default. No kernel change or Xe reload is needed for this setting. AirPlay, cold boot and suspend/resume at 120 Hz remain unverified.
+Fedora keeps three kernels installed and never removes the running one, so the slot-A kernel's modules are always present. Do not lower `installonly_limit`.
 
-## Audio
+### If a new kernel does not boot
 
-The tested audio subsystem is ASUS `1043:15e4`. For the ISO's SOF topology, `snd_soc_sof_sdw quirk=0x288000` and `snd_sof_intel_hda_generic dmic_num=0` avoid two nonexistent PCH microphone links shifting all later backend IDs. The real CS42L43 SoundWire microphone path remains described, but microphone capture is untested.
+Boot the installer USB, then:
 
-Inspect `cat /proc/asound/cards`, `wpctl status` and relevant SOF journal lines. Speaker playback was confirmed and persisted over reboot. An unused Bluetooth-offload PCM may still log probe warnings; disabling that unused PipeWire node is not a test of ordinary Bluetooth audio. Do not raise volume aggressively to compensate for missing amplifiers or tuning firmware.
+```sh
+cryptsetup open /dev/nvme0n1p1 fedora-root
+mount -o subvol=@ /dev/mapper/fedora-root /mnt
+arch-chroot /mnt python3 /opt/lapis-kit/tools/kernel_update_fedora.py rollback
+umount /mnt; cryptsetup close fedora-root
+```
 
-## Networking and SSH
+`rollback` restores the slot-A backup taken before the last update. From a working system the same command works directly.
 
-Connect Wi-Fi with the installed desktop menu or `nmtui`; the installer does not reuse live credentials. NetworkManager uses wpa_supplicant and systemd-resolved. Automatic EFI discovery is disabled so the factory ESP cannot derail startup services.
+### Changing the boot command line or initramfs
 
-SSH starts masked. If you deliberately want remote access, configure your own account/public key, firewall policy and key-only SSH settings before unmasking/enabling it. No shared maintenance key is provided.
+The command line is `/etc/kernel/cmdline`; the initramfs configuration is `/etc/ruby-boot/dracut.conf` and `/etc/ruby-boot/dracut.conf.d/`. After editing either, run `kernel_update_fedora.py update` to rebuild and write slot A. Xe options belong in `/etc/modprobe.d/ruby-xe.conf` instead and need only a reboot.
+
+## libfprint
+
+The fingerprint reader needs this repository's libfprint build, so `/etc/dnf/dnf.conf` has `excludepkgs=libfprint`. When Fedora ships a newer libfprint, update `assets/packages/libfprint-crfpmoc/libfprint.spec` to it (check the patches still apply) and rerun `sudo sh tools/install_fingerprint_fedora.sh`. Enrolled prints survive: they are tied to `/var/lib/fprint/crfpmoc-seed`, not to the library.
+
+## SELinux
+
+The install relabels the filesystem but leaves SELinux **permissive**. After a few normal boots and the optional extras:
+
+```sh
+sudo ausearch -m avc -ts boot
+```
+
+If it reports nothing, switch to enforcing and reboot:
+
+```sh
+sudo sed -i 's/^SELINUX=permissive/SELINUX=enforcing/' /etc/selinux/config
+sudo reboot
+```
+
+Report any denials that involve this project's services in an issue.
+
+## Snapshots
+
+The root is Btrfs (`@`, `@home`, `@log`, `@pkg`) and `snapper` is installed. A root snapshot does not include the Android boot partitions; kernel changes are rolled back with `kernel_update_fedora.py rollback`.
+
+## Things not to do
+
+- Do not relock the bootloader or leave developer mode: the firmware would refuse the self-signed boot images.
+- Do not install GRUB, shim or systemd-boot, and do not repartition the disk: the firmware boots only the named Android partitions.
+- Do not delete the `super` partition until you no longer need to rerun `install_ruby_audio.sh` or `install_ruby_sensors.sh` (they can also use Google's recovery image instead: `tools/fetch_ruby_vendor.py`).

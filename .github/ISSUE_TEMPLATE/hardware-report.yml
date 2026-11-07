@@ -17,8 +17,8 @@ body:
       options:
         - Image build or loader check
         - Physical live USB
-        - Native installation
-        - Installed boot or maintenance
+        - Fedora installation (install_fedora_ruby.py)
+        - Installed Fedora (boot, hardware, kernel update)
     validations:
       required: true
   - type: textarea
