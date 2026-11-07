@@ -10,7 +10,7 @@ One laptop: Lenovo Googlebook 15 (DMI `Google / Ruby`), 512 GB NVMe, firmware `G
 | `install_fedora_ruby.py` | Completed; the laptop's own `vendor_a` was inconsistent (unmerged virtual A/B update), so firmware came from Google's recovery image |
 | Boot | Disk password prompt visible (coreboot framebuffer → simpledrm), unlock, KDE Plasma |
 | Wi-Fi | Connected, `dnf` updates |
-| Speakers | Playback works and sounds right; the factory calibration is loaded at boot (`ruby-speaker-calibration`). Dolby DAX installed, not separately checked |
+| Speakers | Playback works and sounds right; the factory calibration is loaded at boot (`ruby-speaker-calibration`). Dolby DAX active (UCM boot values applied); turning `DAX Speaker Switch` off makes an audible difference |
 | Headphones | Wired headset in the jack |
 | Ambient light sensor | `cros-ec-light` reads lux (about 20 indoors) |
 | Automatic brightness | Dims when the sensor is covered |
