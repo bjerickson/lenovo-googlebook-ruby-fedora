@@ -10,20 +10,25 @@ One laptop: Lenovo Googlebook 15 (DMI `Google / Ruby`), 512 GB NVMe, firmware `G
 | `install_fedora_ruby.py` | Completed; the laptop's own `vendor_a` was inconsistent (unmerged virtual A/B update), so firmware came from Google's recovery image |
 | Boot | Disk password prompt visible (coreboot framebuffer → simpledrm), unlock, KDE Plasma |
 | Wi-Fi | Connected, `dnf` updates |
-| Speakers | Playback works and sounds right; Lenovo tuning, Dolby DAX and calibration were installed but not individually measured |
+| Speakers | Playback works and sounds right; the factory calibration is loaded at boot (`ruby-speaker-calibration`). Dolby DAX installed, not separately checked |
+| Headphones | Wired headset in the jack |
 | Ambient light sensor | `cros-ec-light` reads lux (about 20 indoors) |
 | Automatic brightness | Dims when the sensor is covered |
 | Glowbar | Manual colour writes; `ruby-glowbar` service on AC and battery, follows the Plasma accent colour |
-| Fingerprint | `fprintd-enroll` and `fprintd-verify` |
+| Fingerprint | `fprintd-enroll`, `fprintd-verify`, sudo and the KDE lock screen (`authselect enable-feature with-fingerprint`) |
 | Kernel-update hook | Installed; `status` consistent. **A real kernel update has not happened yet.** |
 | Display | 2880×1800 at 120 Hz |
 | Bluetooth | Working |
 | Camera | Working |
 | Microphone | Working |
 | Thunderbolt | Working |
-| HDMI | External display on the built-in HDMI port |
+| External displays | Built-in HDMI port and USB-C DisplayPort |
+| Input | Keyboard, keyboard backlight, touchpad, touchscreen |
+| Suspend | Suspend and resume |
+| SELinux | Enforcing |
+| Power mode | `install_power_mode.sh` (22 W on AC) |
 
-Not yet checked on Fedora: suspend and resume, headphones, USB-C DisplayPort displays, the power-mode and charge-limit options, fingerprint for sudo and the lock screen, SELinux enforcing, a cold boot after a kernel update, GNOME. These worked under CachyOS on the same hardware ([hardware notes](hardware.md)).
+Not yet tested on Fedora: a kernel update through the hook (no newer kernel had arrived when this was written), GNOME, and the charge-limit rule.
 
 ## Host-side tests
 

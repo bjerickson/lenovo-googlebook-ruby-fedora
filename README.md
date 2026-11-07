@@ -17,16 +17,18 @@ This is a fork of **[lenovo-googlebook-ruby-cachyos](https://github.com/nbarrios
 | Install and boot | LUKS2 + Btrfs on the internal NVMe; disk password prompt visible at boot |
 | Desktop | KDE Plasma (`--desktop kde`); GNOME (`--desktop gnome`) or a text login are also available, only KDE has been tested. See [choosing a desktop](docs/install.md#choosing-a-desktop) |
 | Wi-Fi | Intel CNVi |
-| Speakers | SOF + 4× TAS2563 with Lenovo's tuning, Dolby DAX and factory per-speaker calibration |
+| Speakers | SOF + 4× TAS2563 with Lenovo's tuning, Dolby DAX and factory per-speaker calibration (loaded at boot) |
 | Ambient light sensor | `cros-ec-light`; optional automatic screen brightness for Plasma |
 | Glowbar | Battery, charging and accent colour |
-| Fingerprint reader | Enroll and verify (patched libfprint, `cros_ec_usb`) |
+| Fingerprint reader | Enroll, verify, sudo and the KDE lock screen (patched libfprint, `cros_ec_usb`) |
 | Kernel updates | `dnf upgrade` writes new kernels to the boot partitions automatically |
-| Display | 2880×1800 OLED at 120 Hz; external display over HDMI |
-| Bluetooth, camera, microphone, Thunderbolt | Working |
-| Not yet re-checked on Fedora | Suspend, headphones, USB-C DisplayPort. They worked under CachyOS on the same hardware; see [hardware notes](docs/hardware.md) |
+| Display | 2880×1800 OLED at 120 Hz; external displays over HDMI and USB-C DisplayPort |
+| Input | Keyboard, keyboard backlight, touchpad, touchscreen |
+| Suspend | Suspend and resume |
+| Bluetooth, camera, microphone, headphones, Thunderbolt | Working |
+| Not yet tested on Fedora | A kernel update through the hook, GNOME, the charge limit |
 
-SELinux runs permissive after installation; see [maintenance](docs/maintenance.md#selinux) to switch to enforcing.
+SELinux starts permissive after installation; switching to enforcing has been tested ([maintenance](docs/maintenance.md#selinux)).
 
 ## Start here
 
