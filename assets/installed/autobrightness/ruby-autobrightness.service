@@ -1,0 +1,12 @@
+[Unit]
+Description=Ruby ambient-light screen brightness (Plasma)
+PartOf=graphical-session.target
+After=graphical-session.target plasma-powerdevil.service
+
+[Service]
+ExecStart=/usr/local/libexec/ruby-autobrightness
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

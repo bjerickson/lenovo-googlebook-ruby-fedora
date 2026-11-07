@@ -17,10 +17,10 @@ case "${1-}" in
 esac
 [ "$(id -u)" = 0 ] || { echo 'Run as root' >&2; exit 1; }
 [ "$(cat /sys/class/dmi/id/product_name)" = Ruby ] || { echo 'Not a Ruby board' >&2; exit 1; }
-command -v dkms >/dev/null || { echo 'Missing dkms: pacman -S --needed dkms linux-cachyos-headers' >&2; exit 1; }
+command -v dkms >/dev/null || { echo 'Missing dkms: install dkms and the kernel headers (dnf: dkms kernel-devel; pacman: dkms linux-cachyos-headers)' >&2; exit 1; }
 running=$(uname -r)
 [ -d "/usr/lib/modules/$running/build/include" ] || {
-    echo "No headers for the running kernel $running: pacman -S --needed linux-cachyos-headers" >&2
+    echo "No headers for the running kernel $running (dnf: kernel-devel-$running; pacman: linux-cachyos-headers)" >&2
     echo '(after a staged kernel update, commit it and reboot into the new kernel first)' >&2
     exit 1
 }
